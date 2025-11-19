@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from flask import Flask, request, render_template_string
 import openai
 
@@ -8,58 +9,38 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise RuntimeError("Set OPENAI_API_KEY in your environment first.")
 
+# Use OpenAI v0.28
 openai.api_key = api_key
 
-# ----------- AGENT FUNCTION -----------
-MEMORY_FILE = "memory.json"
+# ----------- YOUR ORIGINAL FUNCTIONS -----------
+def http_get(url: str) -> str:
+    try:
+        r = requests.get(url, timeout=5)
+        return r.text[:3000]
+    except Exception as e:
+        return f"HTTP_GET_ERROR: {e}"
 
-def load_memory():
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return []
-    return []
+def echo(text: str) -> str:
+    return f"ECHO_RESULT: {text}"
 
-def save_memory(memory):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(memory, f, ensure_ascii=False, indent=2)
-
-def generate_test_plan(user_text, memory):
-    memory.append({"role": "user", "content": user_text})
-    # Build messages in old v0.28 format
-    conversation = ""
-    for msg in memory:
-        role = msg["role"]
-        conversation += f"{role}: {msg['content']}\n"
-
+# ----------- AI TEST COVERAGE OPTIMIZER -----------
+def generate_test_plan(user_input: str) -> str:
     prompt = f"""
 You are an AI Test Coverage Optimizer.
-Input user stories, requirements, log data, or past defects.
-Generate:
-- risk scores
-- most impactful test cases
-- missing coverage areas
-- prioritized test plan
-
-User input and conversation history:
-{conversation}
-
-Output concisely and clearly.
+Input: {user_input}
+Output a structured prioritized test plan with:
+1. Risk scores
+2. Most impactful test cases
+3. Missing coverage areas
+Format it clearly for display.
 """
-
     response = openai.Completion.create(
-        engine="text-davinci-003",
+        engine="davinci",
         prompt=prompt,
-        temperature=0.3,
-        max_tokens=800
+        max_tokens=800,
+        temperature=0.3
     )
-
-    reply = response.choices[0].text.strip()
-    memory.append({"role": "assistant", "content": reply})
-    save_memory(memory)
-    return reply
+    return response.choices[0].text.strip()
 
 # ----------- FLASK APP -----------
 app = Flask(__name__)
@@ -71,29 +52,27 @@ HTML_PAGE = """
 <body>
 <h2>AI Test Coverage Optimizer</h2>
 <form method="post">
-<input name="user_input" size="80"/>
-<input type="submit" value="Send"/>
+<textarea name="user_input" rows="6" cols="80" placeholder="Paste requirements, defects, or logs here..."></textarea><br>
+<input type="submit" value="Generate Test Plan"/>
 </form>
-<div style="margin-top:20px;">
-{% for entry in history %}
-<p><b>{{ entry.role }}:</b> {{ entry.content }}</p>
-{% endfor %}
+<div style="margin-top:20px; white-space: pre-wrap;">
+{% if output %}
+<h3>Generated Test Plan:</h3>
+<p>{{ output }}</p>
+{% endif %}
 </div>
 </body>
 </html>
 """
 
-chat_history = load_memory()
-
 @app.route("/", methods=["GET", "POST"])
 def chat():
+    output = None
     if request.method == "POST":
         user_input = request.form.get("user_input", "")
         if user_input:
-            chat_history.append({"role": "user", "content": user_input})
-            reply = generate_test_plan(user_input, chat_history)
-            chat_history.append({"role": "assistant", "content": reply})
-    return render_template_string(HTML_PAGE, history=chat_history)
+            output = generate_test_plan(user_input)
+    return render_template_string(HTML_PAGE, output=output)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

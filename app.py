@@ -5,12 +5,9 @@ import openai
 
 # ----------- SAFETY CHECK -----------
 openai.api_key = os.getenv("OPENAI_API_KEY")
-response = openai.ChatCompletion.create(
+resp = openai.ChatCompletion.create(
     model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "You are an AI Test Coverage Optimizer."},
-        {"role": "user", "content": "Some user stories here"}
-    ]
+    messages=[{"role": "user", "content": "Hello"}]
 )
 # ----------- FLASK APP -----------
 app = Flask(__name__)

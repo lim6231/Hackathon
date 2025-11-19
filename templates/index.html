@@ -1,0 +1,79 @@
+<!-- templates/index.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>AI Test Coverage Optimizer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; }
+    textarea { width: 100%; height: 160px; font-family: monospace; }
+    .col { display:flex; gap:16px; }
+    .box { flex:1; }
+    pre { background:#f3f3f3; padding:12px; }
+    .result { margin-top:20px; }
+    .btn { padding:8px 12px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>AI Test Coverage Optimizer</h1>
+  <p>Paste user stories, requirements, defects or logs. Click Analyze to get risk scoring, missing coverage and prioritized test plan.</p>
+
+  {% if error %}
+    <div style="color:darkred"><b>Error:</b> {{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/analyze">
+    <div class="col">
+      <div class="box">
+        <label><b>User stories / requirements</b></label><br/>
+        <textarea name="user_text" placeholder="Paste user stories or requirements here..."></textarea>
+      </div>
+      <div class="box">
+        <label><b>Context (logs / defects)</b></label><br/>
+        <textarea name="context_text" placeholder="Optional: paste logs or defect summaries..."></textarea>
+      </div>
+    </div>
+    <p>
+      <button class="btn" type="submit">Analyze</button>
+    </p>
+  </form>
+
+  {% if result %}
+  <div class="result">
+    <h2>Report</h2>
+    <p><a href="/download/{{ download_token }}">Download JSON report</a></p>
+
+    <h3>Risk Scores</h3>
+    <ul>
+      {% for r in result.risk_scores %}
+        <li><b>{{ r.area }}</b> — score: {{ r.score }} — {{ r.rationale }}</li>
+      {% endfor %}
+    </ul>
+
+    <h3>Missing Coverage</h3>
+    <ul>
+      {% for m in result.missing_coverage %}
+        <li>{{ m }}</li>
+      {% endfor %}
+    </ul>
+
+    <h3>Most Impactful Tests</h3>
+    <ol>
+      {% for t in result.most_impactful_tests %}
+        <li><b>{{ t.title }}</b> — {{ t.description }} (impact: {{ t.impact }})</li>
+      {% endfor %}
+    </ol>
+
+    <h3>Prioritized Plan</h3>
+    <ol>
+      {% for p in result.prioritized_plan %}
+        <li><b>{{ p.id }}</b> — priority: {{ p.priority }} — est hours: {{ p.estimated_hours }} — {{ p.reason }}</li>
+      {% endfor %}
+    </ol>
+
+    <h3>Raw JSON</h3>
+    <pre>{{ result | tojson(indent=2) }}</pre>
+  </div>
+  {% endif %}
+</body>
+</html>

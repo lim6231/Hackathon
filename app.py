@@ -1,90 +1,84 @@
-# app.py
 import os
 import json
-import re
-import time
-from flask import Flask, request, render_template, send_file, jsonify
+from flask import Flask, request, render_template_string
 from openai import OpenAI
-from optimizer import analyze_artifacts, safe_openai_call
-from io import BytesIO
 
-app = Flask(__name__, template_folder="templates")
-
-# OpenAI client (reads OPENAI_API_KEY from environment)
+# ----------- SAFETY CHECK -----------
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise RuntimeError("Set OPENAI_API_KEY in environment before running.")
+    raise RuntimeError("Set OPENAI_API_KEY in your environment first.")
+
 client = OpenAI(api_key=api_key)
 
-# Configuration: default model (can override via env)
-DEFAULT_MODEL = os.getenv("OT_MODEL", "gpt-4o-mini")
+# ----------- FLASK APP -----------
+app = Flask(__name__)
 
-# Home page
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("index.html", result=None)
+HTML_PAGE = """
+<!doctype html>
+<html>
+<head><title>AI Test Coverage Optimizer</title></head>
+<body>
+<h2>AI Test Coverage Optimizer</h2>
+<form method="post">
+<textarea name="user_input" rows="6" cols="80" placeholder="Paste user stories, requirements, log data, or past defects here..."></textarea><br>
+<input type="submit" value="Generate Test Plan"/>
+</form>
+<div style="margin-top:20px;">
+{% for entry in history %}
+<p><b>{{ entry.role }}:</b> {{ entry.content }}</p>
+{% endfor %}
+</div>
+</body>
+</html>
+"""
 
-# Analyze endpoint (form submit)
-@app.route("/analyze", methods=["POST"])
-def analyze():
+chat_history = []
+
+# ----------- CORE AI FUNCTION -----------
+def generate_test_plan(user_input: str) -> str:
     """
-    Accepts:
-      - pasted text (user_stories)
-      - optional 'context' field (logs, defects)
-    Returns rendered HTML with JSON result and a download link.
+    Calls OpenAI to generate prioritized test plan with risk scores,
+    impactful test cases, and missing coverage areas.
     """
-    user_text = request.form.get("user_text", "").strip()
-    context_text = request.form.get("context_text", "").strip()
-    model = request.form.get("model", DEFAULT_MODEL)
+    system_prompt = (
+        "You are an AI Test Coverage Optimizer for enterprise QA teams. "
+        "Given user stories, requirements, log data, or past defects, "
+        "output a structured prioritized test plan including:\n"
+        "- Risk scores\n"
+        "- Most impactful test cases\n"
+        "- Missing coverage areas\n"
+        "Format the output clearly."
+    )
 
-    if not user_text and not context_text:
-        return render_template("index.html", error="Provide user stories, requirements, or defects to analyze.", result=None)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input}
+    ]
 
-    # Compose artifacts
-    artifacts = {
-        "user_stories": user_text,
-        "context": context_text
-    }
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.2,
+        max_tokens=1000
+    )
 
-    try:
-        result = analyze_artifacts(client=client, artifacts=artifacts, model=model)
-    except Exception as e:
-        # surface error to user
-        return render_template("index.html", error=str(e), result=None)
+    return response.choices[0].message.content.strip()
 
-    # Save JSON into session-like memory (in-memory) and also provide downloadable content
-    json_bytes = json.dumps(result, indent=2).encode("utf-8")
-    download_token = str(int(time.time() * 1000))
-    # store temporarily in /tmp with token name
-    tmp_path = f"/tmp/coverage_report_{download_token}.json"
-    with open(tmp_path, "wb") as f:
-        f.write(json_bytes)
+# ----------- ROUTES -----------
+@app.route("/", methods=["GET", "POST"])
+def chat():
+    if request.method == "POST":
+        user_input = request.form.get("user_input", "")
+        if user_input:
+            chat_history.append({"role": "You", "content": user_input})
+            try:
+                reply = generate_test_plan(user_input)
+            except Exception as e:
+                reply = f"[ERROR] {e}"
+            chat_history.append({"role": "[AI Test Coverage Optimizer]", "content": reply})
 
-    return render_template("index.html", result=result, download_token=download_token)
+    return render_template_string(HTML_PAGE, history=chat_history)
 
-# Download route: /download/<token>
-@app.route("/download/<token>", methods=["GET"])
-def download(token):
-    tmp_path = f"/tmp/coverage_report_{token}.json"
-    if not os.path.exists(tmp_path):
-        return "No report found or it expired.", 404
-    return send_file(tmp_path, as_attachment=True, download_name=f"coverage_report_{token}.json")
-
-# Minimal API for automation: POST /api/analyze
-@app.route("/api/analyze", methods=["POST"])
-def api_analyze():
-    payload = request.get_json(force=True)
-    artifacts = {
-        "user_stories": payload.get("user_stories", ""),
-        "context": payload.get("context", "")
-    }
-    model = payload.get("model", DEFAULT_MODEL)
-    try:
-        result = analyze_artifacts(client=client, artifacts=artifacts, model=model)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    return jsonify(result)
-
+# ----------- MAIN -----------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000, debug=True)

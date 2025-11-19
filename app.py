@@ -2,14 +2,11 @@ import os
 import json
 import requests
 from flask import Flask, request, render_template_string, session
-from uuid import uuid4
 from openai import OpenAI
+from uuid import uuid4
 
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError("Set OPENAI_API_KEY first")
-
-client = OpenAI(api_key=api_key)
+# ----------- OPENAI CLIENT INITIALIZATION -----------
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ----------- TOOLS -----------
 def http_get(url: str) -> str:
@@ -62,20 +59,18 @@ class Agent:
     def handle(self, user_text: str, session_memory=None) -> str:
         session_memory = session_memory if session_memory is not None else []
 
-        # Save user message
         session_memory.append({"role": "user", "content": user_text})
 
-        # Build conversation with memory
         messages = [{"role": "system", "content": self.system_prompt}] + session_memory
 
         msg = self._openai_call(messages)
 
-        # No function call
         if not hasattr(msg, "function_call") or msg.function_call is None:
             reply = msg.content.strip()
         else:
             fn = msg.function_call.name
             args = json.loads(msg.function_call.arguments or "{}")
+
             if fn not in self.tools:
                 reply = f"[ERROR] Unknown tool requested: {fn}"
             else:
@@ -83,14 +78,16 @@ class Agent:
                     result = self.tools[fn](**args)
                 except Exception as e:
                     result = f"[TOOL_ERROR] {e}"
+
                 follow_messages = (
-                    [{"role": "system", "content": self.system_prompt}] +
-                    session_memory +
-                    [
+                    [{"role": "system", "content": self.system_prompt}]
+                    + session_memory
+                    + [
                         {"role": "assistant", "content": f"[Function {fn} executed]"},
                         {"role": "function", "name": fn, "content": result}
                     ]
                 )
+
                 final = self._openai_call(follow_messages)
                 reply = final.content.strip()
 
@@ -129,12 +126,11 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-        "You are 'AI Test Coverage Optimizer'. Your task is:\n"
-        "- Take multiple user stories, requirements, logs, or past defects.\n"
-        "- Generate risk scores, impactful test cases, missing coverage.\n"
-        "- Rank them automatically.\n"
-        "- Output a prioritized test plan as an HTML table with columns: Risk Score, Test Case, Missing Coverage.\n"
-        "Respond only in JSON with 'plan' as a list of objects, each having 'risk', 'test_case', 'missing_coverage'."
+        "You are 'AI Test Coverage Optimizer'."
+        " - Take multiple user stories, requirements, logs, or past defects."
+        " - Generate risk scores, impactful test cases, missing coverage."
+        " - Rank them automatically."
+        " - Output JSON with 'plan' (list of {risk, test_case, missing_coverage})."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
@@ -149,12 +145,12 @@ def chat():
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "")
+
         if user_input:
             chat_history.append({"role": "You", "content": user_input})
             reply = agent.handle(user_input, session_memory=session["session_memory"])
             chat_history.append({"role": "[AI]", "content": reply})
 
-            # Try to parse reply as JSON for HTML table
             try:
                 data = json.loads(reply)
                 plan = data.get("plan", [])

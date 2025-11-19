@@ -1,18 +1,18 @@
 import os
 import json
 import requests
-from flask import Flask, request, render_template_string
-import openai
+from flask import Flask, request, render_template_string, session
+from openai import OpenAI
+from uuid import uuid4
 
 # ----------- SAFETY CHECK -----------
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise RuntimeError("Set OPENAI_API_KEY in your environment first.")
 
-# Use OpenAI v0.28
-openai.api_key = api_key
+client = OpenAI(api_key=api_key)
 
-# ----------- YOUR ORIGINAL FUNCTIONS -----------
+# ----------- TOOLS -----------
 def http_get(url: str) -> str:
     try:
         r = requests.get(url, timeout=5)
@@ -23,27 +23,86 @@ def http_get(url: str) -> str:
 def echo(text: str) -> str:
     return f"ECHO_RESULT: {text}"
 
-# ----------- AI TEST COVERAGE OPTIMIZER -----------
-def generate_test_plan(user_input: str) -> str:
-    prompt = f"""
-You are an AI Test Coverage Optimizer.
-Input: {user_input}
-Output a structured prioritized test plan with:
-1. Risk scores
-2. Most impactful test cases
-3. Missing coverage areas
-Format it clearly for display.
-"""
-    response = openai.Completion.create(
-        engine="davinci",
-        prompt=prompt,
-        max_tokens=800,
-        temperature=0.3
-    )
-    return response.choices[0].text.strip()
+# ----------- AGENT CLASS -----------
+class Agent:
+    def __init__(self, name: str, system_prompt: str, tools=None, model="gpt-4o-mini", memory_file=None):
+        self.name = name
+        self.system_prompt = system_prompt
+        self.tools = tools or {}
+        self.model = model
+        self.memory_file = memory_file or f"{self.name}_memory.json"
+        self.memory = self.load_memory()
+
+    def load_memory(self):
+        if os.path.exists(self.memory_file):
+            try:
+                with open(self.memory_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                return []
+        return []
+
+    def save_memory(self):
+        with open(self.memory_file, "w", encoding="utf-8") as f:
+            json.dump(self.memory, f, ensure_ascii=False, indent=2)
+
+    def _openai_call(self, messages, functions=None):
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 800
+        }
+        if functions:
+            kwargs["functions"] = functions
+            kwargs["function_call"] = "auto"
+
+        resp = client.chat.completions.create(**kwargs)
+        return resp.choices[0].message
+
+    def handle(self, user_text: str, session_memory=None) -> str:
+        session_memory = session_memory if session_memory is not None else []
+
+        # Save user message
+        session_memory.append({"role": "user", "content": user_text})
+
+        # Build conversation with memory
+        messages = [{"role": "system", "content": self.system_prompt}] + session_memory
+
+        msg = self._openai_call(messages)
+
+        # No function call
+        if not hasattr(msg, "function_call") or msg.function_call is None:
+            reply = msg.content.strip()
+        else:
+            fn = msg.function_call.name
+            args = json.loads(msg.function_call.arguments or "{}")
+            if fn not in self.tools:
+                reply = f"[ERROR] Unknown tool requested: {fn}"
+            else:
+                try:
+                    result = self.tools[fn](**args)
+                except Exception as e:
+                    result = f"[TOOL_ERROR] {e}"
+                follow_messages = (
+                    [{"role": "system", "content": self.system_prompt}] +
+                    session_memory +
+                    [
+                        {"role": "assistant", "content": f"[Function {fn} executed]"},
+                        {"role": "function", "name": fn, "content": result}
+                    ]
+                )
+                final = self._openai_call(follow_messages)
+                reply = final.content.strip()
+
+        session_memory.append({"role": "assistant", "content": reply})
+        self.memory.extend(session_memory)
+        self.save_memory()
+        return reply
 
 # ----------- FLASK APP -----------
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
 
 HTML_PAGE = """
 <!doctype html>
@@ -52,27 +111,65 @@ HTML_PAGE = """
 <body>
 <h2>AI Test Coverage Optimizer</h2>
 <form method="post">
-<textarea name="user_input" rows="6" cols="80" placeholder="Paste requirements, defects, or logs here..."></textarea><br>
-<input type="submit" value="Generate Test Plan"/>
+<textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
+<input type="submit" value="Send"/>
 </form>
-<div style="margin-top:20px; white-space: pre-wrap;">
-{% if output %}
-<h3>Generated Test Plan:</h3>
-<p>{{ output }}</p>
+<div style="margin-top:20px;">
+{% if table %}
+<h3>Prioritized Test Plan</h3>
+{{ table|safe }}
 {% endif %}
+{% for entry in history %}
+<p><b>{{ entry.role }}:</b> {{ entry.content }}</p>
+{% endfor %}
 </div>
 </body>
 </html>
 """
 
+agent = Agent(
+    name="test_optimizer",
+    system_prompt=(
+        "You are 'AI Test Coverage Optimizer'. Your task is:\n"
+        "- Take multiple user stories, requirements, logs, or past defects.\n"
+        "- Generate risk scores, impactful test cases, missing coverage.\n"
+        "- Rank them automatically.\n"
+        "- Output a prioritized test plan as an HTML table with columns: Risk Score, Test Case, Missing Coverage.\n"
+        "Respond only in JSON with 'plan' as a list of objects, each having 'risk', 'test_case', 'missing_coverage'."
+    ),
+    tools={"http_get": http_get, "echo": echo}
+)
+
 @app.route("/", methods=["GET", "POST"])
 def chat():
-    output = None
+    if "session_memory" not in session:
+        session["session_memory"] = []
+
+    table_html = None
+    chat_history = session.get("chat_history", [])
+
     if request.method == "POST":
         user_input = request.form.get("user_input", "")
         if user_input:
-            output = generate_test_plan(user_input)
-    return render_template_string(HTML_PAGE, output=output)
+            chat_history.append({"role": "You", "content": user_input})
+            reply = agent.handle(user_input, session_memory=session["session_memory"])
+            chat_history.append({"role": "[AI]", "content": reply})
+
+            # Try to parse reply as JSON for HTML table
+            try:
+                data = json.loads(reply)
+                plan = data.get("plan", [])
+                if plan:
+                    rows = "".join(
+                        f"<tr><td>{p['risk']}</td><td>{p['test_case']}</td><td>{p['missing_coverage']}</td></tr>"
+                        for p in plan
+                    )
+                    table_html = f"<table border='1'><tr><th>Risk Score</th><th>Test Case</th><th>Missing Coverage</th></tr>{rows}</table>"
+            except:
+                pass
+
+    session["chat_history"] = chat_history
+    return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

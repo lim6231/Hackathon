@@ -2,16 +2,16 @@ import os
 import json
 import requests
 from flask import Flask, request, render_template_string, session
-from openai import OpenAI
+import openai
 from uuid import uuid4
 
 # ----------- SAFETY CHECK -----------
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError("Set OPENAI_API_KEY in your environment first.")
 
-client = OpenAI(api_key=api_key)
-
+openai.api_key = os.getenv("OPENAI_API_KEY")
+resp = openai.ChatCompletion.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
+)
 # ----------- TOOLS -----------
 def http_get(url: str) -> str:
     try:

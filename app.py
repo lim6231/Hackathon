@@ -1,15 +1,17 @@
 import os
 import json
 from flask import Flask, request, render_template_string
-from openai import OpenAI
+import openai
 
 # ----------- SAFETY CHECK -----------
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError("Set OPENAI_API_KEY in your environment first.")
-
-client = OpenAI(api_key=api_key)
-
+openai.api_key = os.getenv("OPENAI_API_KEY")
+response = openai.ChatCompletion.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are an AI Test Coverage Optimizer."},
+        {"role": "user", "content": "Some user stories here"}
+    ]
+)
 # ----------- FLASK APP -----------
 app = Flask(__name__)
 

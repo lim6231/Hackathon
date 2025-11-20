@@ -170,9 +170,10 @@ def chat():
                 data = json.loads(reply)
                 plan = data.get("plan", [])
                 if plan:    
-                    rows = "".join(
-                        f"<tr><td>{p['risk']}</td><td>{p.get('functional_area', '')}</td><td>{"<br>".join(p.get('test_case_steps', []))}</td><td>{p.get('expected_result', '')}</td><td>{p.get('missing_coverage', '')}</td><td>{p.get('rationale', '')}</td></tr>"
-                        for p in plan
+                    rows = ""
+                    for p in plan:
+                        steps = "<br>".join(p.get("test_case_steps", []))
+                        rows += ("<tr>"f"<tr><td>{p['risk']}</td><td>{p.get('functional_area', '')}</td><td>{"<br>".join(p.get('test_case_steps', []))}</td><td>{p.get('expected_result', '')}</td><td>{p.get('missing_coverage', '')}</td><td>{p.get('rationale', '')}</td></tr>"
                     )
                     table_html = f"<table border='1'><tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th><th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>{rows}</table>"
             except:

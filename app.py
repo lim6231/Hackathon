@@ -130,10 +130,18 @@ agent = Agent(
         "Your ONLY job is to: "
         "- take any input (user stories, requirements, logs, or questions) "
         "- extract implied features, risks, and coverage gaps "
-        "- generate: risk scores (1–5), test cases, missing coverage analysis "
+        "- generate detailed test plans with the following fields per test case: "
+        "  * risk (1–5), "
+        "  * functional_area, "
+        "  * test_case_steps (step-by-step), "
+        "  * expected_result, "
+        "  * missing_coverage, "
+        "  * rationale (why this test is important) "
         "- ALWAYS output valid JSON ONLY with structure: "
-        "{ 'plan': [ { 'risk': 5, 'test_case': '...', 'missing_coverage': '...' } ] } "
-        "NEVER give general explanations."
+        "{ 'plan': [ { 'risk': 5, 'functional_area': '...', "
+        "'test_case_steps': ['step1', 'step2'], 'expected_result': '...', "
+        "'missing_coverage': '...', 'rationale': '...' } ] } "
+        "NEVER give general explanations or text outside JSON."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
@@ -160,10 +168,10 @@ def chat():
                 plan = data.get("plan", [])
                 if plan:
                     rows = "".join(
-                        f"<tr><td>{p['risk']}</td><td>{p['test_case']}</td><td>{p['missing_coverage']}</td></tr>"
+                        f"<tr><td>{p['risk']}</td><td>{p.get('functional_area', '')}</td><td>{"<br>".join(p.get('test_case_steps', []))}</td><td>{p.get('expected_result', '')}</td><td>{p.get('missing_coverage', '')}</td><td>{p.get('rationale', '')}</td></tr>"
                         for p in plan
                     )
-                    table_html = f"<table border='1'><tr><th>Risk Score</th><th>Test Case</th><th>Missing Coverage</th></tr>{rows}</table>"
+                    table_html = f"<table border='1'><tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th><th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>{rows}</table>"
             except:
                 pass
 

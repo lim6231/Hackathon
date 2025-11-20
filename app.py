@@ -103,9 +103,9 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
 HTML_PAGE = """
 <!doctype html>
 <html>
-<head><title>Hello</title></head>
+<head><title>AI Test Coverage Optimizer</title></head>
 <body>
-<h2>AI Test Coverage Optimizer</h2>
+<h2>Hello</h2>
 <form method="post">
 <textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
 <input type="submit" value="Send"/>
@@ -178,7 +178,8 @@ def chat():
             except:
                 pass
 
-    session["chat_history"] = chat_history
+    session["session_memory"].append({"role": "[AI]", "content": table_html})
+    chat_history.append({"role": "[AI]", "content": table_html})
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 
 if __name__ == "__main__":

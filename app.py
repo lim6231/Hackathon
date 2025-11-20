@@ -126,20 +126,24 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-        "You are 'AI Test Coverage Optimizer'."
-        " - Take multiple user stories, requirements, logs, or past defects."
-        " - Generate risk scores, impactful test cases, missing coverage."
-        " - Rank them automatically."
-        " - Output JSON with 'plan' (list of {risk, test_case, missing_coverage})."
+        "You are the 'AI Test Coverage Optimizer'. "
+        "Your ONLY job is to: "
+        "- take any input (user stories, requirements, logs, or questions) "
+        "- extract implied features, risks, and coverage gaps "
+        "- generate: risk scores (1–5), test cases, missing coverage analysis "
+        "- ALWAYS output valid JSON ONLY with structure: "
+        "{ 'plan': [ { 'risk': 5, 'test_case': '...', 'missing_coverage': '...' } ] } "
+        "NEVER give general explanations."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
+
 
 @app.route("/", methods=["GET", "POST"])
 def chat():
     if "session_memory" not in session:
         session["session_memory"] = []
-
+    
     table_html = None
     chat_history = session.get("chat_history", [])
 

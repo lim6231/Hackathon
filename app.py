@@ -165,6 +165,12 @@ def chat():
             combined_input = sccm_reference + "\nUser query: " + user_input
             chat_history.append({"role": "You", "content": user_input})
             reply = agent.handle(combined_input, session_memory=session["session_memory"])
+
+            # store the AI's JSON reply (string) in session memory
+            session["session_memory"].append({"role": "assistant", "content": reply})
+
+            # store the HTML table for display, fallback to reply if table is None
+            chat_history.append({"role": "assistant", "content": table_html if table_html else reply})
     
             try:
                 data = json.loads(reply)
@@ -193,11 +199,7 @@ def chat():
                 table_html = reply
 
 
-    # store the AI's JSON reply (string) in session memory
-    session["session_memory"].append({"role": "assistant", "content": reply})
-
-    # store the HTML table for display, fallback to reply if table is None
-    chat_history.append({"role": "assistant", "content": table_html if table_html else reply})
+    
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 

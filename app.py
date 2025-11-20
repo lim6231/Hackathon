@@ -2,11 +2,14 @@ import os
 import json
 import requests
 from flask import Flask, request, render_template_string, session
+from flask_session import Session
 from openai import OpenAI
 from uuid import uuid4
 
+# ----------- OPENAI CLIENT INITIALIZATION -----------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ----------- TOOLS -----------
 def http_get(url: str) -> str:
     try:
         r = requests.get(url, timeout=5)
@@ -17,7 +20,7 @@ def http_get(url: str) -> str:
 def echo(text: str) -> str:
     return f"ECHO_RESULT: {text}"
 
-
+# ----------- AGENT CLASS -----------
 class Agent:
     def __init__(self, name: str, system_prompt: str, tools=None, model="gpt-4o-mini", memory_file=None):
         self.name = name
@@ -67,7 +70,6 @@ class Agent:
         self.save_memory()
         return reply
 
-
 # --------- Knowledge store helpers ----------
 KNOWLEDGE_FILE = "knowledge_base.json"
 
@@ -90,30 +92,31 @@ def add_knowledge(text):
     items.append(text)
     save_knowledge(items)
 
-
+# ----------- FLASK APP -----------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
+
+# Use server-side session
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_FILE_DIR"] = "./flask_session"
+Session(app)
 
 HTML_PAGE = """
 <!doctype html>
 <html>
 <head><title>AI Test Coverage Optimizer</title></head>
 <body>
-<h2>Hello</h2>
+<h2>AI Test Coverage Optimizer</h2>
 
 <form method="post" enctype="multipart/form-data">
-<textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
-
-<!-- user wanted upload + url BELOW the text area (option B) -->
+<textarea name="user_input" rows="5" cols="80" placeholder="Enter user stories or queries"></textarea><br>
 <input type="file" name="file"><br>
 <input type="text" name="url" placeholder="Enter URL (OneNote, docs, etc.)"><br>
-<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge y</label><br>
-
+<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
 <input type="submit" value="Send"/>
 </form>
 
 <div style="margin-top:20px;">
-
 {% if table %}
 <h3>Prioritized Test Plan</h3>
 {{ table|safe }}
@@ -122,7 +125,6 @@ HTML_PAGE = """
 {% for entry in history %}
 <p><b>{{ entry.role }}:</b> {{ entry.content|safe }}</p>
 {% endfor %}
-
 </div>
 </body>
 </html>
@@ -132,25 +134,12 @@ agent = Agent(
     name="test_optimizer",
     system_prompt=(
         "You are the 'Test Coverage Optimizer'. "
-        "Your ONLY job is to: "
-        "- take any input (user stories, requirements, logs, or questions) "
-        "- extract implied features, risks, and coverage gaps "
-        "- generate detailed test plans with the following fields per test case: "
-        "  * risk (1–5), "
-        "  * functional_area, "
-        "  * test_case_steps (numbered steps specifically for SCCM CMG deployment, based on official Microsoft documentation or standard ConfigMgr procedures, like '1. Create CMG...', '2. Deploy application...', etc.) "
-        "  * expected_result, "
-        "  * missing_coverage, "
-        "  * rationale (why this test is important) "
-        "- ALWAYS output valid JSON ONLY with structure: "
-        "{ 'plan': [ { 'risk': 5, 'functional_area': '...', "
-        "'test_case_steps': ['step1', 'step2'], 'expected_result': '...', "
-        "'missing_coverage': '...', 'rationale': '...' } ] } "
-        "NEVER give general explanations or text outside JSON."
+        "Your job is to take user input (requirements, logs, questions) and generate a detailed SCCM CMG test plan. "
+        "Output JSON only: { 'plan':[{'risk':int,'functional_area':str,'test_case_steps':[str],"
+        "'expected_result':str,'missing_coverage':str,'rationale':str}] }"
     ),
     tools={"http_get": http_get, "echo": echo}
 )
-
 
 @app.route("/", methods=["GET", "POST"])
 def chat():
@@ -162,35 +151,28 @@ def chat():
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "") or ""
-        # file and url inputs (below textarea per choice B)
         uploaded_file = request.files.get("file")
         url_input = request.form.get("url", "").strip()
         save_k = request.form.get("save_knowledge") == "on"
 
-        # build context: persistent knowledge first
         knowledge_items = load_knowledge()
-        knowledge_block = ""
-        if knowledge_items:
-            knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items)
+        knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items) if knowledge_items else ""
 
-        # collect transient sources from this submission
         transient_sources = []
 
-        # handle URL (fetch content)
         if url_input:
             fetched = http_get(url_input)
-            transient_sources.append(f"[URL CONTENT FROM {url_input}]\n{fetched}")
+            transient_sources.append(f"[URL {url_input}]\n{fetched}")
             if save_k:
                 add_knowledge(f"[URL {url_input}]\n{fetched}")
 
-        # handle uploaded file (read text)
         if uploaded_file:
             try:
                 file_bytes = uploaded_file.read()
                 file_text = file_bytes.decode(errors="ignore")
             except Exception:
                 file_text = "[UNABLE TO READ UPLOADED FILE]"
-            transient_sources.append(f"[UPLOADED FILE CONTENT: {uploaded_file.filename}]\n{file_text}")
+            transient_sources.append(f"[FILE {uploaded_file.filename}]\n{file_text}")
             if save_k:
                 add_knowledge(f"[FILE {uploaded_file.filename}]\n{file_text}")
 
@@ -206,18 +188,15 @@ def chat():
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
         combined_parts.append("\n\n--- SCCM REFERENCE ---\n" + sccm_reference)
         combined_parts.append("\n\n--- USER QUERY ---\n" + user_input)
-
         combined = "\n\n".join(combined_parts)
 
         chat_history.append({"role": "You", "content": user_input})
-
         reply = agent.handle(combined, session_memory=session["session_memory"])
 
         parsed_ok = False
         try:
             data = json.loads(reply)
             plan = data.get("plan", [])
-
             rows = ""
             for p in plan:
                 steps = "<br>".join(p.get("test_case_steps", []))
@@ -231,7 +210,6 @@ def chat():
                     f"<td>{p.get('rationale', '')}</td>"
                     "</tr>"
                 )
-
             if rows:
                 table_html = (
                     "<table border='1'>"
@@ -243,17 +221,10 @@ def chat():
         except Exception:
             parsed_ok = False
 
-        # store only the final HTML (or fallback reply) into history
-        if parsed_ok:
-            chat_history.append({"role": "assistant", "content": table_html})
-        else:
-            chat_history.append({"role": "assistant", "content": reply})
-
-        # persist chat history to session so it survives page navigation (note: session may be cleared on server restart)
+        chat_history.append({"role": "assistant", "content": table_html if parsed_ok else reply})
         session["chat_history"] = chat_history
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

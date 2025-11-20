@@ -193,8 +193,8 @@ def chat():
                 table_html = reply
 
 
-    session["session_memory"].append({"role": "[AI]", "content": table_html})
-    chat_history.append({"role": "[AI]", "content": table_html})
+    session["session_memory"].append({"role": "assistant", "content": table_html})
+    chat_history.append({"role": "assistant", "content": table_html})
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 
 if __name__ == "__main__":

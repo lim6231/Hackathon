@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from flask import Flask, request, render_template_string, session
+from flask_session import Session
 from openai import OpenAI
 from uuid import uuid4
 
@@ -16,7 +17,6 @@ def http_get(url: str) -> str:
 
 def echo(text: str) -> str:
     return f"ECHO_RESULT: {text}"
-
 
 class Agent:
     def __init__(self, name: str, system_prompt: str, tools=None, model="gpt-4o-mini", memory_file=None):
@@ -57,16 +57,13 @@ class Agent:
     def handle(self, user_text: str, session_memory=None) -> str:
         session_memory = session_memory if session_memory is not None else []
         session_memory.append({"role": "user", "content": user_text})
-
         messages = [{"role": "system", "content": self.system_prompt}] + session_memory
         msg = self._openai_call(messages)
-
         reply = msg.content.strip()
         session_memory.append({"role": "assistant", "content": reply})
         self.memory.extend(session_memory)
         self.save_memory()
         return reply
-
 
 # --------- Knowledge store helpers ----------
 KNOWLEDGE_FILE = "knowledge_base.json"
@@ -90,30 +87,36 @@ def add_knowledge(text):
     items.append(text)
     save_knowledge(items)
 
-
+# ---------------- Flask app ----------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
+
+# server-side sessions to avoid cookie size limit
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_FILE_DIR"] = "./flask_session_files"
+app.config["SESSION_PERMANENT"] = False
+Session(app)
+
+# folder for uploaded files
+UPLOAD_FOLDER = "./uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 HTML_PAGE = """
 <!doctype html>
 <html>
 <head><title>AI Test Coverage Optimizer</title></head>
 <body>
-<h2>Hello</h2>
+<h2>AI Test Coverage Optimizer</h2>
 
 <form method="post" enctype="multipart/form-data">
 <textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
-
-<!-- user wanted upload + url BELOW the text area (option B) -->
 <input type="file" name="file"><br>
 <input type="text" name="url" placeholder="Enter URL (OneNote, docs, etc.)"><br>
-<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge y</label><br>
-
+<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
 <input type="submit" value="Send"/>
 </form>
 
 <div style="margin-top:20px;">
-
 {% if table %}
 <h3>Prioritized Test Plan</h3>
 {{ table|safe }}
@@ -122,7 +125,6 @@ HTML_PAGE = """
 {% for entry in history %}
 <p><b>{{ entry.role }}:</b> {{ entry.content|safe }}</p>
 {% endfor %}
-
 </div>
 </body>
 </html>
@@ -135,64 +137,62 @@ agent = Agent(
         "Your ONLY job is to: "
         "- take any input (user stories, requirements, logs, or questions) "
         "- extract implied features, risks, and coverage gaps "
-        "- generate detailed test plans with the following fields per test case: "
-        "  * risk (1–5), "
-        "  * functional_area, "
-        "  * test_case_steps (numbered steps specifically for SCCM CMG deployment, based on official Microsoft documentation or standard ConfigMgr procedures, like '1. Create CMG...', '2. Deploy application...', etc.) "
-        "  * expected_result, "
-        "  * missing_coverage, "
-        "  * rationale (why this test is important) "
+        "- generate detailed test plans with fields: risk (1–5), functional_area, test_case_steps, expected_result, missing_coverage, rationale "
         "- ALWAYS output valid JSON ONLY with structure: "
-        "{ 'plan': [ { 'risk': 5, 'functional_area': '...', "
-        "'test_case_steps': ['step1', 'step2'], 'expected_result': '...', "
-        "'missing_coverage': '...', 'rationale': '...' } ] } "
+        "{ 'plan': [ { 'risk': 5, 'functional_area': '...', 'test_case_steps': ['step1'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] } "
         "NEVER give general explanations or text outside JSON."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
-
 
 @app.route("/", methods=["GET", "POST"])
 def chat():
     if "session_memory" not in session:
         session["session_memory"] = []
 
-    chat_history = session.get("chat_history", [])
+    chat_history_file = "chat_history.json"
+    if os.path.exists(chat_history_file):
+        with open(chat_history_file, "r", encoding="utf-8") as f:
+            chat_history = json.load(f)
+    else:
+        chat_history = []
+
     table_html = None
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "") or ""
-        # file and url inputs (below textarea per choice B)
         uploaded_file = request.files.get("file")
         url_input = request.form.get("url", "").strip()
         save_k = request.form.get("save_knowledge") == "on"
 
-        # build context: persistent knowledge first
+        # knowledge context
         knowledge_items = load_knowledge()
         knowledge_block = ""
         if knowledge_items:
             knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items)
 
-        # collect transient sources from this submission
         transient_sources = []
 
-        # handle URL (fetch content)
+        # handle URL
         if url_input:
             fetched = http_get(url_input)
             transient_sources.append(f"[URL CONTENT FROM {url_input}]\n{fetched}")
             if save_k:
                 add_knowledge(f"[URL {url_input}]\n{fetched}")
 
-        # handle uploaded file (read text)
+        # handle uploaded file (saved to disk)
         if uploaded_file:
-            try:
-                file_bytes = uploaded_file.read()
-                file_text = file_bytes.decode(errors="ignore")
-            except Exception:
-                file_text = "[UNABLE TO READ UPLOADED FILE]"
-            transient_sources.append(f"[UPLOADED FILE CONTENT: {uploaded_file.filename}]\n{file_text}")
+            filename = uploaded_file.filename
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            uploaded_file.save(file_path)
+            transient_sources.append(f"[UPLOADED FILE: {filename}] saved at {file_path}")
             if save_k:
-                add_knowledge(f"[FILE {uploaded_file.filename}]\n{file_text}")
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        file_text = f.read()
+                    add_knowledge(f"[FILE {filename}]\n{file_text}")
+                except:
+                    add_knowledge(f"[FILE {filename}]\n[UNREADABLE]")
 
         sccm_reference = (
             "You need to generate a test plan for SCCM CMG deployment.\n"
@@ -213,11 +213,10 @@ def chat():
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
 
-        parsed_ok = False
+        # try to render JSON → table
         try:
             data = json.loads(reply)
             plan = data.get("plan", [])
-
             rows = ""
             for p in plan:
                 steps = "<br>".join(p.get("test_case_steps", []))
@@ -231,7 +230,6 @@ def chat():
                     f"<td>{p.get('rationale', '')}</td>"
                     "</tr>"
                 )
-
             if rows:
                 table_html = (
                     "<table border='1'>"
@@ -239,21 +237,19 @@ def chat():
                     "<th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>"
                     f"{rows}</table>"
                 )
-                parsed_ok = True
+                chat_history.append({"role": "assistant", "content": table_html})
+            else:
+                chat_history.append({"role": "assistant", "content": reply})
         except Exception:
-            parsed_ok = False
-
-        # store only the final HTML (or fallback reply) into history
-        if parsed_ok:
-            chat_history.append({"role": "assistant", "content": table_html})
-        else:
             chat_history.append({"role": "assistant", "content": reply})
 
-        # persist chat history to session so it survives page navigation (note: session may be cleared on server restart)
-        session["chat_history"] = chat_history
+        # persist chat history on disk
+        with open(chat_history_file, "w", encoding="utf-8") as f:
+            json.dump(chat_history, f, ensure_ascii=False, indent=2)
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 
-
 if __name__ == "__main__":
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs("./flask_session_files", exist_ok=True)
     app.run(host="0.0.0.0", port=5000, debug=True)

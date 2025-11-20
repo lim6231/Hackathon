@@ -167,7 +167,7 @@ def chat():
             reply = agent.handle(combined_input, session_memory=session["session_memory"])
 
             # store the AI's JSON reply (string) in session memory
-            session["session_memory"].append({"role": "assistant", "content": reply})
+            #session["session_memory"].append({"role": "assistant", "content": reply})
 
             # store the HTML table for display, fallback to reply if table is None
             chat_history.append({"role": "assistant", "content": table_html if table_html else reply})
@@ -197,9 +197,12 @@ def chat():
                 )
             except:
                 table_html = reply
+            
+            # AFTER table_html is created add to history
+            chat_history.append({"role": "assistant", "content": table_html if table_html else reply})
 
-
-    
+    # SAVE chat_history after POST
+    session["chat_history"] = chat_history
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 

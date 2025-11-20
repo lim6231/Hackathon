@@ -161,7 +161,7 @@ def chat():
         if user_input:
             sccm_reference = """
             You need to generate a test plan for SCCM CMG deployment.
-            Reference: https://learn.microsoft.com/en-us"""
+            Reference: https://learn.microsoft.com/en-us/intune/configmgr"""
             combined_input = sccm_reference + "\nUser query: " + user_input
             chat_history.append({"role": "You", "content": user_input})
             reply = agent.handle(combined_input, session_memory=session["session_memory"])
@@ -169,7 +169,7 @@ def chat():
             try:
                 data = json.loads(reply)
                 plan = data.get("plan", [])
-                if plan:
+                if plan:    
                     rows = "".join(
                         f"<tr><td>{p['risk']}</td><td>{p.get('functional_area', '')}</td><td>{"<br>".join(p.get('test_case_steps', []))}</td><td>{p.get('expected_result', '')}</td><td>{p.get('missing_coverage', '')}</td><td>{p.get('rationale', '')}</td></tr>"
                         for p in plan

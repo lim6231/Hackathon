@@ -165,7 +165,7 @@ def chat():
             combined_input = sccm_reference + "\nUser query: " + user_input
             chat_history.append({"role": "You", "content": user_input})
             reply = agent.handle(combined_input, session_memory=session["session_memory"])
-            chat_history.append({"role": "[AI]", "content": reply})
+    
             try:
                 data = json.loads(reply)
                 plan = data.get("plan", [])
@@ -173,11 +173,25 @@ def chat():
                     rows = ""
                     for p in plan:
                         steps = "<br>".join(p.get("test_case_steps", []))
-                        rows += ("<tr>"f"<tr><td>{p['risk']}</td><td>{p.get('functional_area', '')}</td><td>{"<br>".join(p.get('test_case_steps', []))}</td><td>{p.get('expected_result', '')}</td><td>{p.get('missing_coverage', '')}</td><td>{p.get('rationale', '')}</td></tr>"
-                    )
-                    table_html = f"<table border='1'><tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th><th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>{rows}</table>"
+                        rows += (
+                            "<tr>"
+                            f"<td>{p['risk']}</td>"
+                            f"<td>{p.get('functional_area', '')}</td>"
+                            f"<td>{steps}</td>"
+                            f"<td>{p.get('expected_result', '')}</td>"
+                            f"<td>{p.get('missing_coverage', '')}</td>"
+                            f"<td>{p.get('rationale', '')}</td>"
+                            "</tr>"
+                        )
+                table_html = (
+                    "<table border='1'>"
+                    "<tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th>"
+                    "<th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>"
+                    f"{rows}</table>"
+                )
             except:
-                pass
+                table_html = reply
+
 
     session["session_memory"].append({"role": "[AI]", "content": table_html})
     chat_history.append({"role": "[AI]", "content": table_html})

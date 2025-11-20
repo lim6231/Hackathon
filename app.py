@@ -103,7 +103,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
 HTML_PAGE = """
 <!doctype html>
 <html>
-<head><title>AI Test Coverage Optimizer</title></head>
+<head><title>Hello</title></head>
 <body>
 <h2>AI Test Coverage Optimizer</h2>
 <form method="post">
@@ -133,7 +133,7 @@ agent = Agent(
         "- generate detailed test plans with the following fields per test case: "
         "  * risk (1–5), "
         "  * functional_area, "
-        "  * test_case_steps (step-by-step), "
+        "  * test_case_steps (numbered steps specifically for SCCM CMG deployment, based on official Microsoft documentation or standard ConfigMgr procedures, like '1. Create CMG...', '2. Deploy application...', etc.) "
         "  * expected_result, "
         "  * missing_coverage, "
         "  * rationale (why this test is important) "
@@ -159,10 +159,13 @@ def chat():
         user_input = request.form.get("user_input", "")
 
         if user_input:
+            sccm_reference = """
+            You need to generate a test plan for SCCM CMG deployment.
+            Reference: https://learn.microsoft.com/en-us"""
+            combined_input = sccm_reference + "\nUser query: " + user_input
             chat_history.append({"role": "You", "content": user_input})
-            reply = agent.handle(user_input, session_memory=session["session_memory"])
+            reply = agent.handle(combined_input, session_memory=session["session_memory"])
             chat_history.append({"role": "[AI]", "content": reply})
-
             try:
                 data = json.loads(reply)
                 plan = data.get("plan", [])

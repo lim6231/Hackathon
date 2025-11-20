@@ -68,6 +68,29 @@ class Agent:
         return reply
 
 
+# --------- Knowledge store helpers ----------
+KNOWLEDGE_FILE = "knowledge_base.json"
+
+def load_knowledge():
+    if os.path.exists(KNOWLEDGE_FILE):
+        try:
+            with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("items", [])
+        except:
+            return []
+    return []
+
+def save_knowledge(items):
+    with open(KNOWLEDGE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"items": items}, f, ensure_ascii=False, indent=2)
+
+def add_knowledge(text):
+    items = load_knowledge()
+    items.append(text)
+    save_knowledge(items)
+
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
 
@@ -77,8 +100,15 @@ HTML_PAGE = """
 <head><title>AI Test Coverage Optimizer</title></head>
 <body>
 <h2>Hello</h2>
-<form method="post">
+
+<form method="post" enctype="multipart/form-data">
 <textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
+
+<!-- user wanted upload + url BELOW the text area (option B) -->
+<input type="file" name="file"><br>
+<input type="text" name="url" placeholder="Enter URL (OneNote, docs, etc.)"><br>
+<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
+
 <input type="submit" value="Send"/>
 </form>
 
@@ -101,7 +131,7 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-        "You are the 'AI Test Coverage Optimizer'. "
+        "You are the 'Test Coverage Optimizer'. "
         "Your ONLY job is to: "
         "- take any input (user stories, requirements, logs, or questions) "
         "- extract implied features, risks, and coverage gaps "
@@ -131,51 +161,95 @@ def chat():
     table_html = None
 
     if request.method == "POST":
-        user_input = request.form.get("user_input", "")
+        user_input = request.form.get("user_input", "") or ""
+        # file and url inputs (below textarea per choice B)
+        uploaded_file = request.files.get("file")
+        url_input = request.form.get("url", "").strip()
+        save_k = request.form.get("save_knowledge") == "on"
 
-        if user_input:
-            sccm_reference = """
-            You need to generate a test plan for SCCM CMG deployment.
-            Reference: https://learn.microsoft.com/en-us/intune/configmgr"""
-            combined = sccm_reference + "\nUser query: " + user_input
+        # build context: persistent knowledge first
+        knowledge_items = load_knowledge()
+        knowledge_block = ""
+        if knowledge_items:
+            knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items)
 
-            chat_history.append({"role": "You", "content": user_input})
+        # collect transient sources from this submission
+        transient_sources = []
 
-            reply = agent.handle(combined, session_memory=session["session_memory"])
+        # handle URL (fetch content)
+        if url_input:
+            fetched = http_get(url_input)
+            transient_sources.append(f"[URL CONTENT FROM {url_input}]\n{fetched}")
+            if save_k:
+                add_knowledge(f"[URL {url_input}]\n{fetched}")
 
-            # Try JSON → create table
+        # handle uploaded file (read text)
+        if uploaded_file:
             try:
-                data = json.loads(reply)
-                plan = data.get("plan", [])
+                file_bytes = uploaded_file.read()
+                file_text = file_bytes.decode(errors="ignore")
+            except Exception:
+                file_text = "[UNABLE TO READ UPLOADED FILE]"
+            transient_sources.append(f"[UPLOADED FILE CONTENT: {uploaded_file.filename}]\n{file_text}")
+            if save_k:
+                add_knowledge(f"[FILE {uploaded_file.filename}]\n{file_text}")
 
-                rows = ""
-                for p in plan:
-                    steps = "<br>".join(p.get("test_case_steps", []))
-                    rows += (
-                        "<tr>"
-                        f"<td>{p['risk']}</td>"
-                        f"<td>{p.get('functional_area', '')}</td>"
-                        f"<td>{steps}</td>"
-                        f"<td>{p.get('expected_result', '')}</td>"
-                        f"<td>{p.get('missing_coverage', '')}</td>"
-                        f"<td>{p.get('rationale', '')}</td>"
-                        "</tr>"
-                    )
+        sccm_reference = (
+            "You need to generate a test plan for SCCM CMG deployment.\n"
+            "Reference: https://learn.microsoft.com/en-us/intune/configmgr"
+        )
 
+        combined_parts = []
+        if knowledge_block:
+            combined_parts.append(knowledge_block)
+        if transient_sources:
+            combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
+        combined_parts.append("\n\n--- SCCM REFERENCE ---\n" + sccm_reference)
+        combined_parts.append("\n\n--- USER QUERY ---\n" + user_input)
+
+        combined = "\n\n".join(combined_parts)
+
+        chat_history.append({"role": "You", "content": user_input})
+
+        reply = agent.handle(combined, session_memory=session["session_memory"])
+
+        parsed_ok = False
+        try:
+            data = json.loads(reply)
+            plan = data.get("plan", [])
+
+            rows = ""
+            for p in plan:
+                steps = "<br>".join(p.get("test_case_steps", []))
+                rows += (
+                    "<tr>"
+                    f"<td>{p.get('risk', '')}</td>"
+                    f"<td>{p.get('functional_area', '')}</td>"
+                    f"<td>{steps}</td>"
+                    f"<td>{p.get('expected_result', '')}</td>"
+                    f"<td>{p.get('missing_coverage', '')}</td>"
+                    f"<td>{p.get('rationale', '')}</td>"
+                    "</tr>"
+                )
+
+            if rows:
                 table_html = (
                     "<table border='1'>"
                     "<tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th>"
                     "<th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>"
                     f"{rows}</table>"
                 )
+                parsed_ok = True
+        except Exception:
+            parsed_ok = False
 
-                # store table in history
-                chat_history.append({"role": "assistant", "content": table_html})
+        # store only the final HTML (or fallback reply) into history
+        if parsed_ok:
+            chat_history.append({"role": "assistant", "content": table_html})
+        else:
+            chat_history.append({"role": "assistant", "content": reply})
 
-            except Exception:
-                # fallback if JSON invalid
-                chat_history.append({"role": "assistant", "content": reply})
-
+        # persist chat history to session so it survives page navigation (note: session may be cleared on server restart)
         session["chat_history"] = chat_history
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)

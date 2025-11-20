@@ -193,8 +193,12 @@ def chat():
                 table_html = reply
 
 
-    session["session_memory"].append({"role": "assistant", "content": table_html})
-    chat_history.append({"role": "assistant", "content": table_html})
+    # store the AI's JSON reply (string) in session memory
+    session["session_memory"].append({"role": "assistant", "content": reply})
+
+    # store the HTML table for display, fallback to reply if table is None
+    chat_history.append({"role": "assistant", "content": table_html if table_html else reply})
+
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
 
 if __name__ == "__main__":

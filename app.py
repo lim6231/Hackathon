@@ -102,10 +102,21 @@ agent = Agent(
     name="test_optimizer",
     system_prompt=(
         "You are the 'AI Test Coverage Optimizer'. "
-        "Your ONLY job is to generate test plans in JSON structure ONLY. "
+        "Your ONLY job is to: "
+        "- take any input (user stories, requirements, logs, or questions) "
+        "- extract implied features, risks, and coverage gaps "
+        "- generate detailed test plans with the following fields per test case: "
+        "  * risk (1–5), "
+        "  * functional_area, "
+        "  * test_case_steps (numbered steps specifically for SCCM CMG deployment, based on official Microsoft documentation or standard ConfigMgr procedures, like '1. Create CMG...', '2. Deploy application...', etc.) "
+        "  * expected_result, "
+        "  * missing_coverage, "
+        "  * rationale (why this test is important) "
+        "- ALWAYS output valid JSON ONLY with structure: "
         "{ 'plan': [ { 'risk': 5, 'functional_area': '...', "
         "'test_case_steps': ['step1', 'step2'], 'expected_result': '...', "
-        "'missing_coverage': '...', 'rationale': '...' } ] }"
+        "'missing_coverage': '...', 'rationale': '...' } ] } "
+        "NEVER give general explanations or text outside JSON."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
@@ -124,8 +135,8 @@ def chat():
 
         if user_input:
             sccm_reference = """
-You need to generate a test plan for SCCM CMG deployment.
-Reference: https://learn.microsoft.com/en-us/intune/configmgr"""
+            You need to generate a test plan for SCCM CMG deployment.
+            Reference: https://learn.microsoft.com/en-us/intune/configmgr"""
             combined = sccm_reference + "\nUser query: " + user_input
 
             chat_history.append({"role": "You", "content": user_input})

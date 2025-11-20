@@ -107,7 +107,7 @@ HTML_PAGE = """
 <!-- user wanted upload + url BELOW the text area (option B) -->
 <input type="file" name="file"><br>
 <input type="text" name="url" placeholder="Enter URL (OneNote, docs, etc.)"><br>
-<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
+<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge y</label><br>
 
 <input type="submit" value="Send"/>
 </form>

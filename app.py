@@ -117,45 +117,45 @@ def extract_json(text: str) -> str:
     return t
 
 
-# ---------------- expand vcredist functionality ----------------
 def expand_vcredist_functionality_steps(plan_data):
-    """
-    Format missing coverage with high-level descriptions, recommended coverage, and rationale.
-    """
     TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
 
     for item in plan_data.get("plan", []):
         text_blob = (
-            item.get("functional_area", "") + " " +
             " ".join(item.get("test_case_steps", [])) + " " +
             item.get("expected_result", "")
         ).lower()
 
         if any(k in text_blob for k in TARGET_KEYWORDS):
-            # High-level summary of what the test covers
+            # Dynamically determine missing coverage and rationale
+            missing_coverage_list = []
+            rationale_list = []
+
+            steps = item.get("test_case_steps", [])
+
+            # Simple logic to adjust missing coverage and rationale
+            if any("install" in s.lower() for s in steps):
+                missing_coverage_list.append("Verify vcredist post-installation for all clients")
+                rationale_list.append("Ensures the installation process installs required runtime correctly")
+
+            if any("upgrade" in s.lower() for s in steps):
+                missing_coverage_list.append("Validate vcredist upgrade paths and old client handling")
+                rationale_list.append("Ensures upgrades don’t break dependent applications")
+
+            if any("application" in s.lower() for s in steps):
+                missing_coverage_list.append("Deploy applications relying on vcredist and validate")
+                rationale_list.append("Confirms clients can run apps dependent on vcredist")
+
             coverage_summary = "- Client has vcredist installed\n- Applications relying on vcredist can run successfully"
 
-            # Recommended missing coverage
-            missing_coverage = (
-                "- Deploy an application that depends on vcredist\n"
-                "- Run scheduled scripts that rely on vcredist\n"
-                "- Run CMPivot queries on the client to validate state"
-            )
-
-            # Rationale
-            rationale = (
-                "Ensures that SCCM client functionality depending on vcredist "
-                "is fully validated, preventing runtime failures and ensuring reliable deployments."
-            )
-
-            # Combine into structured format
             item["missing_coverage"] = (
                 f"With this test case:\n{coverage_summary}\n\n"
-                f"Missing coverage / what to be added:\n{missing_coverage}\n\n"
-                f"Rationale of adding / what can be achieved after adding:\n{rationale}"
+                f"Missing coverage / what to be added:\n- " + "\n- ".join(missing_coverage_list) + "\n\n"
+                f"Rationale of adding / what can be achieved after adding:\n- " + "\n- ".join(rationale_list)
             )
 
     return plan_data
+
 
 # ---------------- Flask app ----------------
 app = Flask(__name__)

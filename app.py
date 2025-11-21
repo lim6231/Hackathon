@@ -67,7 +67,7 @@ class Agent:
         return reply
 
 
-# --------- Knowledge store helpers ----------
+# -------- Knowledge helpers ----------
 KNOWLEDGE_FILE = "knowledge_base.json"
 
 def load_knowledge():
@@ -90,37 +90,30 @@ def add_knowledge(text):
     save_knowledge(items)
 
 
-# ---------------- extract JSON ----------------
+# -------- JSON extraction ----------
 def extract_json(text: str) -> str:
     if not isinstance(text, str):
         return text
-
     t = text.strip()
-
     if t.startswith("```"):
         t_inner = t.strip("`").lstrip()
         if t_inner.lower().startswith("json"):
             t_inner = t_inner[4:].lstrip()
         return t_inner.strip()
-
     if t.startswith("`") and t.endswith("`"):
         return t.strip("`").strip()
-
     obj_match = re.search(r"(\{(?:.|\n)*\})", t)
     if obj_match:
         return obj_match.group(1)
-
     arr_match = re.search(r"(\[(?:.|\n)*\])", t)
     if arr_match:
         return arr_match.group(1)
-
     return t
 
 
-# ---------------- expand vcredist functionality ----------------
+# -------- Test plan enrichment ----------
 def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
-    # Join each section with newlines
-    text = (
+    missing_coverage_text = (
         "With this test case:\n" +
         "\n".join([f"- {c}" for c in coverage_summary]) + "\n\n" +
         "Missing coverage / what to be added:\n" +
@@ -128,20 +121,16 @@ def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_li
         "Rationale of adding / what can be achieved after adding:\n" +
         "\n".join([f"- {r}" for r in rationale_list])
     )
-    # Wrap in <pre> to preserve formatting in HTML
-    item["missing_coverage"] = f"<pre>{text}</pre>"
+    item["missing_coverage"] = f"<pre>{missing_coverage_text}</pre>"
+    item["rationale"] = f"<pre>\n" + "\n".join([f"- {r}" for r in rationale_list]) + "</pre>"
     return item
 
 def enrich_test_plan(plan_data):
     for idx, item in enumerate(plan_data.get("plan", [])):
         steps_text = " ".join(item.get("test_case_steps", [])).lower()
-
-        # Default placeholder summaries
         coverage_summary = ["Test steps executed successfully"]
         missing_coverage_list = ["None identified"]
         rationale_list = ["This test plan covers the essential functionalities."]
-
-        # Heuristic for vcredist-related test cases
         if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
             coverage_summary = [
                 "Client has vcredist installed",
@@ -157,20 +146,15 @@ def enrich_test_plan(plan_data):
                 "Ensures upgrades don’t break dependent applications",
                 "Confirms clients can run apps dependent on vcredist"
             ]
-
-        # Format and update each item
         plan_data["plan"][idx] = format_missing_coverage_for_html(
             item, coverage_summary, missing_coverage_list, rationale_list
         )
-
     return plan_data
 
 
-
-# ---------------- Flask app ----------------
+# -------- Flask app ----------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
-
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = "./flask_session_files"
 app.config["SESSION_PERMANENT"] = False
@@ -179,14 +163,12 @@ Session(app)
 UPLOAD_FOLDER = "./uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-
 HTML_PAGE = """
 <!doctype html>
 <html>
 <head><title>Hackathon</title></head>
 <body>
 <h2>Hackathon</h2>
-
 <form method="post" enctype="multipart/form-data">
 <textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
 <input type="file" name="file"><br>
@@ -194,13 +176,11 @@ HTML_PAGE = """
 <label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
 <input type="submit" value="Send"/>
 </form>
-
 <div style="margin-top:20px;">
 {% if table %}
 <h3>Prioritized Test Plan</h3>
 {{ table|safe }}
 {% endif %}
-
 {% for entry in history %}
 <p><b>{{ entry.role }}:</b> {{ entry.content|safe }}</p>
 {% endfor %}
@@ -208,7 +188,6 @@ HTML_PAGE = """
 </body>
 </html>
 """
-
 
 agent = Agent(
     name="test_optimizer",
@@ -277,7 +256,6 @@ def chat():
                     from docx import Document
                     doc = Document(file_path)
                     file_text = "\n".join([p.text for p in doc.paragraphs])
-
                 elif filename.lower().endswith(".pdf"):
                     import PyPDF2
                     with open(file_path, "rb") as f:
@@ -285,19 +263,15 @@ def chat():
                         for page in reader.pages:
                             extracted = page.extract_text() or ""
                             file_text += extracted + "\n"
-
                 else:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         file_text = f.read()
-
             except Exception as e:
                 file_text = f"[UNREADABLE FILE: {e}]"
 
-            # === FIX APPLIED HERE (ONLY CHANGE) ===
             transient_sources.append(f"[FILE CONTENT: {filename}]\n{file_text}")
             if save_k:
                 add_knowledge(f"[FILE {filename}]\n{file_text}")
-            # ======================================
 
         sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
 
@@ -306,8 +280,8 @@ def chat():
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
         combined_parts.append("\n\n--- SCCM REFERENCE ---\n" + sccm_reference)
         combined_parts.append("\n\n--- USER QUERY ---\n" + user_input)
-
         combined = "\n\n".join(combined_parts)
+
         chat_history.append({"role": "You", "content": user_input})
 
         if any(keyword in user_input.lower() for keyword in ["sccm", "test plan"]):
@@ -318,7 +292,7 @@ def chat():
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
-            data = expand_vcredist_functionality_steps(data)
+            data = enrich_test_plan(data)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:
@@ -336,7 +310,7 @@ def chat():
                 )
             if rows:
                 table_html = (
-                    "<table border='1'>"
+                    "<table border='1' style='border-collapse: collapse;'>"
                     "<tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th>"
                     "<th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>"
                     f"{rows}</table>"

@@ -262,6 +262,9 @@ def chat():
 
         chat_history.append({"role": "You", "content": user_input})
 
+        if any(keyword in user_input.lower() for keyword in ["sccm", "sum", "software update management", "test plan"]):
+            combined = "Please generate a detailed SCCM SUM test plan in JSON format with numbered test steps:\n\n" + combined
+
         reply = agent.handle(combined, session_memory=session["session_memory"])
 
         # try to render JSON → table

@@ -114,6 +114,19 @@ def extract_json(text: str) -> str:
 
     return t
 
+# ---------------- Helper: expand vcredist steps ----------------
+def expand_vcredist_functionality_steps(plan_data):
+    for item in plan_data.get("plan", []):
+        if "functionality" in item.get("functional_area", "").lower():
+            # Append concrete SCCM actions
+            item["test_case_steps"].extend([
+                "Deploy an application that depends on vcredist",
+                "Run scheduled scripts that rely on vcredist",
+                "Run CMPivot queries to validate client state"
+            ])
+            item["missing_coverage"] = "Functional validation of apps, scripts, and CMPivot queries depending on vcredist"
+    return plan_data
+
 # ---------------- Flask app ----------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
@@ -180,11 +193,10 @@ def chat():
         session["session_memory"] = []
 
     chat_history_file = "chat_history.json"
+    chat_history = []
     if os.path.exists(chat_history_file):
         with open(chat_history_file, "r", encoding="utf-8") as f:
             chat_history = json.load(f)
-    else:
-        chat_history = []
 
     table_html = None
 
@@ -195,13 +207,11 @@ def chat():
         save_k = request.form.get("save_knowledge") == "on"
 
         knowledge_items = load_knowledge()
-        knowledge_block = ""
-        if knowledge_items:
-            knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items)
+        knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items) if knowledge_items else ""
 
         transient_sources = []
 
-        # -------- Updated URL handling ----------
+        # URL content
         if url_input:
             try:
                 fetched = http_get(url_input)
@@ -212,13 +222,12 @@ def chat():
             except Exception as e:
                 transient_sources.append(f"[URL CONTENT FROM {url_input} ERROR: {e}]")
 
-        # -------- Updated file handling (docx/pdf/text) ----------
+        # Uploaded file handling
         if uploaded_file:
             filename = uploaded_file.filename
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(file_path)
             transient_sources.append(f"[UPLOADED FILE: {filename}] saved at {file_path}")
-
             if save_k:
                 try:
                     file_text = ""
@@ -239,14 +248,9 @@ def chat():
                 except Exception as e:
                     add_knowledge(f"[FILE {filename}]\n[UNREADABLE: {e}]")
 
-        sccm_reference = (
-            "You need to generate a complete and detailed test plan.\n"
-            "Reference: https://learn.microsoft.com/en-us"
-        )
+        sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
 
-        combined_parts = []
-        if knowledge_block:
-            combined_parts.append(knowledge_block)
+        combined_parts = [p for p in [knowledge_block] if p]
         if transient_sources:
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
         combined_parts.append("\n\n--- SCCM REFERENCE ---\n" + sccm_reference)
@@ -260,17 +264,11 @@ def chat():
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
 
-        # Chat Mode formatting
-        if "Chat Mode" in reply:
-            items = re.split(r"\s*\d+\.\s+", reply)
-            if len(items) > 1:
-                formatted = "<ol>" + "".join(f"<li>{i.strip()}</li>" for i in items[1:] if i.strip()) + "</ol>"
-                reply = formatted
-
-        # Render JSON → table
+        # Try rendering JSON → table
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
+            data = expand_vcredist_functionality_steps(data)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:

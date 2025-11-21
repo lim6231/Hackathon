@@ -90,36 +90,20 @@ def add_knowledge(text):
 
 # ---------------- Helper: extract JSON from mixed text ----------------
 def extract_json(text: str) -> str:
-    """
-    Try to extract JSON from a string that may contain:
-    - fenced code blocks (```json ... ```)
-    - backtick code blocks (`{ ... }`)
-    - extra assistant commentary plus embedded JSON
-    Returns the JSON string if found, otherwise returns the original text.
-    """
     if not isinstance(text, str):
         return text
 
     t = text.strip()
 
-    # If it's a fenced block starting with ```json or ```:
     if t.startswith("```"):
-        # remove leading and trailing backticks
         t_inner = t.strip("`").lstrip()
-        # if it starts with 'json', remove that prefix
         if t_inner.lower().startswith("json"):
             t_inner = t_inner[4:].lstrip()
-        # return inner content
         return t_inner.strip()
 
-    # If wrapped in single backticks
     if t.startswith("`") and t.endswith("`"):
-        inner = t.strip("`").strip()
-        return inner
+        return t.strip("`").strip()
 
-    # Try to locate the first JSON object {...} or array [...]
-    # Find a balanced {...} by searching for the first { and matching closing }
-    # Simple heuristic: use regex for object or array
     obj_match = re.search(r"(\{(?:.|\n)*\})", t)
     if obj_match:
         return obj_match.group(1)
@@ -128,20 +112,17 @@ def extract_json(text: str) -> str:
     if arr_match:
         return arr_match.group(1)
 
-    # nothing found — return original so json.loads will fail and then fallback
     return t
 
 # ---------------- Flask app ----------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
 
-# server-side sessions to avoid cookie size limit
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = "./flask_session_files"
 app.config["SESSION_PERMANENT"] = False
 Session(app)
 
-# folder for uploaded files
 UPLOAD_FOLDER = "./uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -177,21 +158,18 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-    "You are an expert QA assistant. Behave like a normal chatbot by default. "
-
-    "You have TWO MODES:\n"
-    "1) Chat Mode – If the user asks a question, talk normally and generate JSON but dont use it, JSON generation is just incase it fails\n"
-    "2) Test-Plan Mode – Only activate when the user explicitly asks for a test plan "
-    "or when they upload/give requirements/stories/ask what can be tested.\n\n"
-
-    "When in Test-Plan Mode:\n"
-    "- Generate JSON ONLY using structure:\n"
-    "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
-    "- If you are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
-    "- Missing coverage SHOULD be filled whenever the assistant identifies gaps based on its domain knowledge OR when auditing an existing plan.\n"
-    "- Stay concise.\n"
-
-    "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
+        "You are an expert QA assistant. Behave like a normal chatbot by default. "
+        "You have TWO MODES:\n"
+        "1) Chat Mode – If the user asks a question, talk normally and generate JSON but dont use it, JSON generation is just incase it fails\n"
+        "2) Test-Plan Mode – Only activate when the user explicitly asks for a test plan "
+        "or when they upload/give requirements/stories/ask what can be tested.\n\n"
+        "When in Test-Plan Mode:\n"
+        "- Generate JSON ONLY using structure:\n"
+        "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
+        "- If you are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
+        "- Missing coverage SHOULD be filled whenever the assistant identifies gaps based on its domain knowledge OR when auditing an existing plan.\n"
+        "- Stay concise.\n"
+        "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
     ),
     tools={"http_get": http_get, "echo": echo}
 )
@@ -216,7 +194,6 @@ def chat():
         url_input = request.form.get("url", "").strip()
         save_k = request.form.get("save_knowledge") == "on"
 
-        # knowledge context
         knowledge_items = load_knowledge()
         knowledge_block = ""
         if knowledge_items:
@@ -224,26 +201,43 @@ def chat():
 
         transient_sources = []
 
-        # handle URL
+        # -------- Updated URL handling ----------
         if url_input:
-            fetched = http_get(url_input)
-            transient_sources.append(f"[URL CONTENT FROM {url_input}]\n{fetched}")
-            if save_k:
-                add_knowledge(f"[URL {url_input}]\n{fetched}")
+            try:
+                fetched = http_get(url_input)
+                fetched_text = re.sub(r"<[^>]+>", "", fetched)
+                transient_sources.append(f"[URL CONTENT FROM {url_input}]\n{fetched_text}")
+                if save_k:
+                    add_knowledge(f"[URL {url_input}]\n{fetched_text}")
+            except Exception as e:
+                transient_sources.append(f"[URL CONTENT FROM {url_input} ERROR: {e}]")
 
-        # handle uploaded file (saved to disk)
+        # -------- Updated file handling (docx/pdf/text) ----------
         if uploaded_file:
             filename = uploaded_file.filename
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(file_path)
             transient_sources.append(f"[UPLOADED FILE: {filename}] saved at {file_path}")
+
             if save_k:
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        file_text = f.read()
+                    file_text = ""
+                    if filename.lower().endswith(".docx"):
+                        from docx import Document
+                        doc = Document(file_path)
+                        file_text = "\n".join([p.text for p in doc.paragraphs])
+                    elif filename.lower().endswith(".pdf"):
+                        import PyPDF2
+                        with open(file_path, "rb") as f:
+                            reader = PyPDF2.PdfReader(f)
+                            for page in reader.pages:
+                                file_text += page.extract_text() + "\n"
+                    else:
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            file_text = f.read()
                     add_knowledge(f"[FILE {filename}]\n{file_text}")
-                except:
-                    add_knowledge(f"[FILE {filename}]\n[UNREADABLE]")
+                except Exception as e:
+                    add_knowledge(f"[FILE {filename}]\n[UNREADABLE: {e}]")
 
         sccm_reference = (
             "You need to generate a complete and detailed test plan.\n"
@@ -259,25 +253,22 @@ def chat():
         combined_parts.append("\n\n--- USER QUERY ---\n" + user_input)
 
         combined = "\n\n".join(combined_parts)
-
         chat_history.append({"role": "You", "content": user_input})
 
         if any(keyword in user_input.lower() for keyword in ["sccm", "test plan"]):
             combined = "Please generate a detailed test plan in JSON format with complete test steps after understanding user requirement and from uploaded documents:\n\n" + combined
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
-        
-        # After getting `reply` from agent.handle()
-        if "Chat Mode" in reply:  # or some heuristic to detect normal chat text
-            # Split by common numbered formats like "1. "
+
+        # Chat Mode formatting
+        if "Chat Mode" in reply:
             items = re.split(r"\s*\d+\.\s+", reply)
             if len(items) > 1:
                 formatted = "<ol>" + "".join(f"<li>{i.strip()}</li>" for i in items[1:] if i.strip()) + "</ol>"
                 reply = formatted
 
-        # try to render JSON → table
+        # Render JSON → table
         try:
-            #  Attempt to extract JSON from reply in case the model wrapped it with markdown
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
             plan = data.get("plan", [])
@@ -306,10 +297,8 @@ def chat():
             else:
                 chat_history.append({"role": "assistant", "content": reply})
         except Exception:
-            # if parsing failed, keep raw reply in history (so user sees the assistant message)
             chat_history.append({"role": "assistant", "content": reply})
 
-        # persist chat history on disk
         with open(chat_history_file, "w", encoding="utf-8") as f:
             json.dump(chat_history, f, ensure_ascii=False, indent=2)
 

@@ -119,6 +119,10 @@ def extract_json(text: str) -> str:
 
 # ---------------- expand vcredist functionality ----------------
 def expand_vcredist_functionality_steps(plan_data):
+    """
+    Automatically detect vcredist-related items and inject the expected
+    missing coverage steps (deploy app, run scheduled script, CMPivot).
+    """
     TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
 
     for item in plan_data.get("plan", []):
@@ -131,6 +135,7 @@ def expand_vcredist_functionality_steps(plan_data):
         if any(k in text_blob for k in TARGET_KEYWORDS):
             steps = item.setdefault("test_case_steps", [])
 
+            # Only add if NOT already present (avoid duplication)
             def add_unique(step):
                 if step not in steps:
                     steps.append(step)
@@ -139,14 +144,26 @@ def expand_vcredist_functionality_steps(plan_data):
             add_unique("Run scheduled scripts that rely on vcredist")
             add_unique("Run CMPivot queries on the client to validate state")
 
+            # Build the structured missing coverage string
+            current_coverage = "\n".join(steps)
+            recommended = (
+                "Deploy an application that depends on vcredist\n"
+                "Run scheduled scripts that rely on vcredist\n"
+                "Run CMPivot queries on the client to validate state"
+            )
+            rationale = (
+                "Ensures that SCCM client functionality depending on vcredist "
+                "is fully validated, preventing runtime failures and ensuring reliable deployments."
+            )
+
             item["missing_coverage"] = (
-                "Functional validation of SCCM client features that require "
-                "vcredist (Microsoft Visual C++ Runtime): deploy app, execute "
-                "scheduled scripts, and run CMPivot queries to confirm the runtime "
-                "did not break client functionality."
+                f"With this test case: {current_coverage}\n"
+                f"Recommended adding coverage:\n{recommended}\n"
+                f"Rationale of adding/what can be achieved after adding:\n{rationale}"
             )
 
     return plan_data
+
 
 
 

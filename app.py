@@ -180,9 +180,9 @@ agent = Agent(
     "You are an expert QA assistant. Behave like a normal chatbot by default. "
 
     "You have TWO MODES:\n"
-    "1) Chat Mode – If the user asks a question, talk normally and DO NOT generate JSON.\n"
+    "1) Chat Mode – If the user asks a question, talk normally and generate JSON but dont use it, JSON generation is just incase it fails\n"
     "2) Test-Plan Mode – Only activate when the user explicitly asks for a test plan "
-    "or when they upload/give requirements/stories.\n\n"
+    "or when they upload/give requirements/stories/ask what can be tested.\n\n"
 
     "When in Test-Plan Mode:\n"
     "- Generate JSON ONLY using structure:\n"
@@ -246,7 +246,7 @@ def chat():
                     add_knowledge(f"[FILE {filename}]\n[UNREADABLE]")
 
         sccm_reference = (
-            "You need to generate a test plan.\n"
+            "You need to generate a complete and detailed test plan.\n"
             "Reference: https://learn.microsoft.com/en-us/intune/configmgr"
         )
 
@@ -262,8 +262,8 @@ def chat():
 
         chat_history.append({"role": "You", "content": user_input})
 
-        if any(keyword in user_input.lower() for keyword in ["sccm", "sum", "software update management", "test plan"]):
-            combined = "Please generate a detailed SCCM SUM test plan in JSON format with numbered test steps:\n\n" + combined
+        if any(keyword in user_input.lower() for keyword in ["sccm", "test plan"]):
+            combined = "Please generate a detailed test plan in JSON format with complete test steps after understanding user requirement and from uploaded documents:\n\n" + combined
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
         

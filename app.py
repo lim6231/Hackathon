@@ -117,25 +117,39 @@ def extract_json(text: str) -> str:
 # ---------------- Helper: expand vcredist functionality in test plan ----------------
 def expand_vcredist_functionality_steps(plan_data):
     """
-    Automatically append missing functional test steps for items
-    that involve 'functionality' in their functional_area.
+    Automatically detect vcredist-related items and inject the expected
+    missing coverage steps (deploy app, run scheduled script, CMPivot).
     """
+    TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
+
     for item in plan_data.get("plan", []):
-        if "functionality" in item.get("functional_area", "").lower():
-            # Add concrete steps to validate vcredist-dependent functionality
-            item.setdefault("test_case_steps", [])
-            item["test_case_steps"].extend([
-                "Deploy an application that depends on vcredist",
-                "Run scheduled scripts that rely on vcredist",
-                "Run CMPivot queries on the client to validate state"
-            ])
-            # Set missing coverage description explicitly
+        text_blob = (
+            item.get("functional_area", "") + " " +
+            " ".join(item.get("test_case_steps", [])) + " " +
+            item.get("expected_result", "")
+        ).lower()
+
+        if any(k in text_blob for k in TARGET_KEYWORDS):
+            steps = item.setdefault("test_case_steps", [])
+
+            # Only add if NOT already present (avoid duplication)
+            def add_unique(step):
+                if step not in steps:
+                    steps.append(step)
+
+            add_unique("Deploy an application that depends on vcredist")
+            add_unique("Run scheduled scripts that rely on vcredist")
+            add_unique("Run CMPivot queries on the client to validate state")
+
             item["missing_coverage"] = (
-                "Functional validation of features that rely on vcredist "
-                "(Microsoft Visual C++ Runtime). Includes deploy app, run scheduled scripts, "
-                "and run CMPivot queries to verify client functionality."
+                "Functional validation of SCCM client features that require "
+                "vcredist (Microsoft Visual C++ Runtime): deploy app, execute "
+                "scheduled scripts, and run CMPivot queries to confirm the runtime "
+                "did not break client functionality."
             )
+
     return plan_data
+
 
 
 

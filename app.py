@@ -253,26 +253,37 @@ def chat():
             filename = uploaded_file.filename
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(file_path)
-            transient_sources.append(f"[UPLOADED FILE: {filename}] saved at {file_path}")
-            if save_k:
-                try:
-                    file_text = ""
-                    if filename.lower().endswith(".docx"):
-                        from docx import Document
-                        doc = Document(file_path)
-                        file_text = "\n".join([p.text for p in doc.paragraphs])
-                    elif filename.lower().endswith(".pdf"):
-                        import PyPDF2
-                        with open(file_path, "rb") as f:
-                            reader = PyPDF2.PdfReader(f)
-                            for page in reader.pages:
-                                file_text += page.extract_text() + "\n"
-                    else:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            file_text = f.read()
-                    add_knowledge(f"[FILE {filename}]\n{file_text}")
-                except Exception as e:
-                    add_knowledge(f"[FILE {filename}]\n[UNREADABLE: {e}]")
+
+            # Always extract text and pass content to agent
+            file_text = ""
+            try:
+                if filename.lower().endswith(".docx"):
+                    from docx import Document
+                    doc = Document(file_path)
+                    file_text = "\n".join([p.text for p in doc.paragraphs])
+
+                elif filename.lower().endswith(".pdf"):
+                    import PyPDF2
+                    with open(file_path, "rb") as f:
+                        reader = PyPDF2.PdfReader(f)
+                        for page in reader.pages:
+                            extracted = page.extract_text() or ""
+                            file_text += extracted + "\n"
+
+                else:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        file_text = f.read()
+
+            except Exception as e:
+                file_text = f"[UNREADABLE FILE: {e}]"
+
+    # Provide file content to LLM EVERY TIME
+    transient_sources.append(f"[FILE CONTENT: {filename}]\n{file_text}")
+
+    # Only save to knowledge if checkbox enabled
+    if save_k:
+        add_knowledge(f"[FILE {filename}]\n{file_text}")
+
 
         sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
 

@@ -133,7 +133,7 @@ def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_li
     return item
 
 def enrich_test_plan(plan_data):
-    for item in plan_data.get("plan", []):
+    for idx, item in enumerate(plan_data.get("plan", [])):
         steps_text = " ".join(item.get("test_case_steps", [])).lower()
 
         # Default placeholder summaries
@@ -141,7 +141,7 @@ def enrich_test_plan(plan_data):
         missing_coverage_list = ["None identified"]
         rationale_list = ["This test plan covers the essential functionalities."]
 
-        # Example: vcredist heuristic
+        # Heuristic for vcredist-related test cases
         if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
             coverage_summary = [
                 "Client has vcredist installed",
@@ -158,10 +158,13 @@ def enrich_test_plan(plan_data):
                 "Confirms clients can run apps dependent on vcredist"
             ]
 
-        # Format for HTML display
-        format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list)
+        # Format and update each item
+        plan_data["plan"][idx] = format_missing_coverage_for_html(
+            item, coverage_summary, missing_coverage_list, rationale_list
+        )
 
     return plan_data
+
 
 
 # ---------------- Flask app ----------------

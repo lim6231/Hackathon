@@ -19,7 +19,7 @@ def http_get(url: str) -> str:
 def echo(text: str) -> str:
     return f"ECHO_RESULT: {text}"
 
-class Agent: 
+class Agent:
     def __init__(self, name: str, system_prompt: str, tools=None, model="gpt-4o-mini", memory_file=None):
         self.name = name
         self.system_prompt = system_prompt
@@ -51,7 +51,6 @@ class Agent:
         if functions:
             kwargs["functions"] = functions
             kwargs["function_call"] = "auto"
-
         resp = client.chat.completions.create(**kwargs)
         return resp.choices[0].message
 
@@ -111,44 +110,32 @@ def extract_json(text: str) -> str:
     return t
 
 
-# -------- Test plan enrichment ----------
-def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
-    missing_coverage_text = (
-        "With this test case:\n" +
-        "\n".join([f"- {c}" for c in coverage_summary]) + "\n\n" +
-        "Missing coverage / what to be added:\n" +
-        "\n".join([f"- {m}" for m in missing_coverage_list]) + "\n\n" +
-        "Rationale of adding / what can be achieved after adding:\n" +
-        "\n".join([f"- {r}" for r in rationale_list])
-    )
-    item["missing_coverage"] = f"<pre>{missing_coverage_text}</pre>"
-    item["rationale"] = f"<pre>\n" + "\n".join([f"- {r}" for r in rationale_list]) + "</pre>"
-    return item
+# -------- Test plan enrichment & merge per functional area ----------
+def enrich_test_plan_optimized(plan_data):
+    merged = {}
+    for item in plan_data.get("plan", []):
+        func = item.get("functional_area", "Unknown")
+        steps = item.get("test_case_steps", [])
+        expected = item.get("expected_result", "")
+        missing = item.get("missing_coverage", "")
 
-def enrich_test_plan(plan_data):
-    for idx, item in enumerate(plan_data.get("plan", [])):
-        steps_text = " ".join(item.get("test_case_steps", [])).lower()
-        coverage_summary = ["Test steps executed successfully"]
-        missing_coverage_list = ["None identified"]
-        rationale_list = ["This test plan covers the essential functionalities."]
-        if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
-            coverage_summary = [
-                "Client has vcredist installed",
-                "Applications relying on vcredist can run successfully"
-            ]
-            missing_coverage_list = [
-                "Verify vcredist post-installation for all clients",
-                "Validate vcredist upgrade paths and old client handling",
-                "Deploy applications relying on vcredist and validate"
-            ]
-            rationale_list = [
-                "Ensures the installation process installs required runtime correctly",
-                "Ensures upgrades don’t break dependent applications",
-                "Confirms clients can run apps dependent on vcredist"
-            ]
-        plan_data["plan"][idx] = format_missing_coverage_for_html(
-            item, coverage_summary, missing_coverage_list, rationale_list
-        )
+        if func not in merged:
+            merged[func] = {"test_case_steps": [], "expected_result": expected, "missing_coverage": missing}
+        merged[func]["test_case_steps"].extend(steps)
+
+    # Reformat missing coverage as <pre>
+    for func, vals in merged.items():
+        vals["missing_coverage"] = f"<pre>{vals['missing_coverage']}</pre>"
+
+    # Convert back to list format
+    plan_data["plan"] = []
+    for func, vals in merged.items():
+        plan_data["plan"].append({
+            "functional_area": func,
+            "test_case_steps": vals["test_case_steps"],
+            "expected_result": vals["expected_result"],
+            "missing_coverage": vals["missing_coverage"]
+        })
     return plan_data
 
 
@@ -192,18 +179,8 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-        "You are an expert QA assistant. Behave like a normal chatbot by default. "
-        "You have TWO MODES:\n"
-        "1) Chat Mode – If the user asks a question, talk normally and generate JSON but dont use it, JSON generation is just incase it fails\n"
-        "2) Test-Plan Mode – Only activate when the user explicitly asks for a test plan "
-        "or when they upload/give requirements/stories/ask what can be tested.\n\n"
-        "When in Test-Plan Mode:\n"
-        "- Generate JSON ONLY using structure:\n"
-        "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
-        "- If you are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
-        "- Missing coverage SHOULD be filled whenever the assistant identifies gaps based on its domain knowledge OR when auditing an existing plan.\n"
-        "- Stay concise.\n"
-        "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
+        "You are an expert QA assistant. Only generate JSON test plans when requested.\n"
+        "JSON structure: { 'plan':[{'functional_area':'...', 'test_case_steps':['...'], 'expected_result':'...', 'missing_coverage':'...'}]}"
     ),
     tools={"http_get": http_get, "echo": echo}
 )
@@ -230,7 +207,6 @@ def chat():
 
         knowledge_items = load_knowledge()
         knowledge_block = "\n\n--- STORED KNOWLEDGE ---\n" + "\n\n".join(knowledge_items) if knowledge_items else ""
-
         transient_sources = []
 
         # URL content
@@ -249,13 +225,15 @@ def chat():
             filename = uploaded_file.filename
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(file_path)
-
             file_text = ""
             try:
                 if filename.lower().endswith(".docx"):
                     from docx import Document
                     doc = Document(file_path)
                     file_text = "\n".join([p.text for p in doc.paragraphs])
+                    for table in doc.tables:
+                        for row in table.rows:
+                            file_text += " | ".join(cell.text for cell in row.cells) + "\n"
                 elif filename.lower().endswith(".pdf"):
                     import PyPDF2
                     with open(file_path, "rb") as f:
@@ -274,7 +252,6 @@ def chat():
                 add_knowledge(f"[FILE {filename}]\n{file_text}")
 
         sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
-
         combined_parts = [p for p in [knowledge_block] if p]
         if transient_sources:
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
@@ -292,7 +269,7 @@ def chat():
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
-            data = enrich_test_plan(data)
+            data = enrich_test_plan_optimized(data)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:
@@ -300,19 +277,16 @@ def chat():
                 steps = "<br>".join([f"{i+1}. {s}" for i, s in enumerate(steps_list)])
                 rows += (
                     "<tr>"
-                    f"<td>{p.get('risk', '')}</td>"
                     f"<td>{p.get('functional_area', '')}</td>"
                     f"<td>{steps}</td>"
                     f"<td>{p.get('expected_result', '')}</td>"
                     f"<td>{p.get('missing_coverage', '')}</td>"
-                    f"<td>{p.get('rationale', '')}</td>"
                     "</tr>"
                 )
             if rows:
                 table_html = (
                     "<table border='1' style='border-collapse: collapse;'>"
-                    "<tr><th>Risk Score</th><th>Functional Area</th><th>Test Steps</th>"
-                    "<th>Expected Result</th><th>Missing Coverage</th><th>Rationale</th></tr>"
+                    "<tr><th>Functional Area</th><th>Test Steps</th><th>Expected Result</th><th>Missing Coverage</th></tr>"
                     f"{rows}</table>"
                 )
                 chat_history.append({"role": "assistant", "content": table_html})

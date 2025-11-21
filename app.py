@@ -120,8 +120,7 @@ def extract_json(text: str) -> str:
 # ---------------- expand vcredist functionality ----------------
 def expand_vcredist_functionality_steps(plan_data):
     """
-    Automatically detect vcredist-related items and inject the expected
-    missing coverage steps (deploy app, run scheduled script, CMPivot).
+    Format missing coverage with high-level descriptions, recommended coverage, and rationale.
     """
     TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
 
@@ -133,40 +132,30 @@ def expand_vcredist_functionality_steps(plan_data):
         ).lower()
 
         if any(k in text_blob for k in TARGET_KEYWORDS):
-            steps = item.setdefault("test_case_steps", [])
+            # High-level summary of what the test covers
+            coverage_summary = "- Client has vcredist installed\n- Applications relying on vcredist can run successfully"
 
-            # Only add if NOT already present (avoid duplication)
-            def add_unique(step):
-                if step not in steps:
-                    steps.append(step)
-
-            add_unique("Deploy an application that depends on vcredist")
-            add_unique("Run scheduled scripts that rely on vcredist")
-            add_unique("Run CMPivot queries on the client to validate state")
-
-            # Build the structured missing coverage string
-            current_coverage = "\n".join(steps)
-            recommended = (
-                "Deploy an application that depends on vcredist\n"
-                "Run scheduled scripts that rely on vcredist\n"
-                "Run CMPivot queries on the client to validate state"
+            # Recommended missing coverage
+            missing_coverage = (
+                "- Deploy an application that depends on vcredist\n"
+                "- Run scheduled scripts that rely on vcredist\n"
+                "- Run CMPivot queries on the client to validate state"
             )
+
+            # Rationale
             rationale = (
                 "Ensures that SCCM client functionality depending on vcredist "
                 "is fully validated, preventing runtime failures and ensuring reliable deployments."
             )
 
+            # Combine into structured format
             item["missing_coverage"] = (
-                f"With this test case: {current_coverage}\n"
-                f"Recommended adding coverage:\n{recommended}\n"
-                f"Rationale of adding/what can be achieved after adding:\n{rationale}"
+                f"With this test case:\n{coverage_summary}\n\n"
+                f"Missing coverage / what to be added:\n{missing_coverage}\n\n"
+                f"Rationale of adding / what can be achieved after adding:\n{rationale}"
             )
 
     return plan_data
-
-
-
-
 
 # ---------------- Flask app ----------------
 app = Flask(__name__)

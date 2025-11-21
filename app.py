@@ -266,7 +266,7 @@ def chat():
 
         # try to render JSON → table
         try:
-            # Attempt to extract JSON from reply in case the model wrapped it with markdown
+            #  Attempt to extract JSON from reply in case the model wrapped it with markdown
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
             plan = data.get("plan", [])

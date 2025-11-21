@@ -133,22 +133,23 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-    "You are an expert QA assistant. Behave like a normal chatbot by default."
+    "You are an expert QA assistant. Behave like a normal chatbot by default. "
 
     "You have TWO MODES:\n"
-    "1) **Chat Mode** – If the user asks a question, talk normally and DO NOT generate JSON.\n"
-    "2) **Test-Plan Mode** – Only activate when the user explicitly asks for a test plan "
+    "1) Chat Mode – If the user asks a question, talk normally and DO NOT generate JSON.\n"
+    "2) Test-Plan Mode – Only activate when the user explicitly asks for a test plan "
     "or when they upload/give requirements/stories.\n\n"
 
     "When in Test-Plan Mode:\n"
     "- Generate JSON ONLY using structure:\n"
     "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
-    "- If *you* are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
+    "- If you are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
     "- Missing coverage should ONLY be filled when the user provides an existing test plan to audit.\n"
     "- Stay concise.\n"
 
     "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
     ),
+
     #system_prompt=(
         #"You are the 'Test Coverage Optimizer'. "
         #"Your ONLY job is to: "
@@ -232,7 +233,8 @@ def chat():
 
         # try to render JSON → table
         try:
-            data = json.loads(reply)
+            clean = extract_json(reply)
+            data = json.loads(clean)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:

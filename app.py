@@ -118,9 +118,9 @@ def extract_json(text: str) -> str:
 
 
 # ---------------- expand vcredist functionality ----------------
-def format_missing_coverage(item, coverage_summary, missing_coverage_list, rationale_list):
-    # Join each section with newlines for clarity
-    missing_text = (
+def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
+    # Join each section with newlines
+    text = (
         "With this test case:\n" +
         "\n".join([f"- {c}" for c in coverage_summary]) + "\n\n" +
         "Missing coverage / what to be added:\n" +
@@ -128,24 +128,21 @@ def format_missing_coverage(item, coverage_summary, missing_coverage_list, ratio
         "Rationale of adding / what can be achieved after adding:\n" +
         "\n".join([f"- {r}" for r in rationale_list])
     )
-    # Wrap in <pre> so HTML preserves line breaks
-    item["missing_coverage"] = f"<pre>{missing_text}</pre>"
+    # Wrap in <pre> to preserve formatting in HTML
+    item["missing_coverage"] = f"<pre>{text}</pre>"
     return item
 
-
-def expand_test_case_missing_coverage(plan_data):
-    """
-    For any plan_data, generate structured missing coverage + rationale with proper line breaks.
-    """
+def enrich_test_plan(plan_data):
     for item in plan_data.get("plan", []):
         steps_text = " ".join(item.get("test_case_steps", [])).lower()
-        coverage_summary = ["Test steps executed successfully"]  # default placeholder
 
-        missing_coverage_list = []
-        rationale_list = []
+        # Default placeholder summaries
+        coverage_summary = ["Test steps executed successfully"]
+        missing_coverage_list = ["None identified"]
+        rationale_list = ["This test plan covers the essential functionalities."]
 
-        # Example heuristics based on step contents
-        if "vcredist" in steps_text:
+        # Example: vcredist heuristic
+        if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
             coverage_summary = [
                 "Client has vcredist installed",
                 "Applications relying on vcredist can run successfully"
@@ -160,11 +157,9 @@ def expand_test_case_missing_coverage(plan_data):
                 "Ensures upgrades don’t break dependent applications",
                 "Confirms clients can run apps dependent on vcredist"
             ]
-        else:
-            missing_coverage_list = ["None identified"]
-            rationale_list = ["This test plan covers the essential functionalities."]
 
-        format_missing_coverage(item, coverage_summary, missing_coverage_list, rationale_list)
+        # Format for HTML display
+        format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list)
 
     return plan_data
 

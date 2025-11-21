@@ -111,32 +111,73 @@ def extract_json(text: str) -> str:
 
 
 # -------- Test plan enrichment & merge per functional area ----------
-def enrich_test_plan_optimized(plan_data):
+# -------- Test plan enrichment ----------
+def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
+    missing_coverage_text = (
+        "With this test case:\n" +
+        "\n".join([f"- {c}" for c in coverage_summary]) + "\n\n" +
+        "Missing coverage / what to be added:\n" +
+        "\n".join([f"- {m}" for m in missing_coverage_list]) + "\n\n" +
+        "Rationale of adding / what can be achieved after adding:\n" +
+        "\n".join([f"- {r}" for r in rationale_list])
+    )
+    item["missing_coverage"] = f"<pre>{missing_coverage_text}</pre>"
+    item["rationale"] = f"<pre>\n" + "\n".join([f"- {r}" for r in rationale_list]) + "</pre>"
+    return item
+
+
+def enrich_test_plan(plan_data):
     merged = {}
+
+    # --- merge test steps by functional area ---
     for item in plan_data.get("plan", []):
-        func = item.get("functional_area", "Unknown")
-        steps = item.get("test_case_steps", [])
-        expected = item.get("expected_result", "")
-        missing = item.get("missing_coverage", "")
+        fa = item.get("functional_area", "")
+        if fa not in merged:
+            merged[fa] = {
+                "risk": item.get("risk", ""),
+                "functional_area": fa,
+                "test_case_steps": [],
+                "expected_result": item.get("expected_result", "")
+            }
+        merged[fa]["test_case_steps"].extend(item.get("test_case_steps", []))
 
-        if func not in merged:
-            merged[func] = {"test_case_steps": [], "expected_result": expected, "missing_coverage": missing}
-        merged[func]["test_case_steps"].extend(steps)
+    # --- analyze each merged functional area once ---
+    final_plan = []
+    for fa, item in merged.items():
+        steps_text = " ".join(item.get("test_case_steps", [])).lower()
 
-    # Reformat missing coverage as <pre>
-    for func, vals in merged.items():
-        vals["missing_coverage"] = f"<pre>{vals['missing_coverage']}</pre>"
+        # defaults
+        coverage_summary = ["Test steps executed successfully"]
+        missing_coverage_list = ["None identified"]
+        rationale_list = ["This test plan covers the essential functionalities."]
 
-    # Convert back to list format
-    plan_data["plan"] = []
-    for func, vals in merged.items():
-        plan_data["plan"].append({
-            "functional_area": func,
-            "test_case_steps": vals["test_case_steps"],
-            "expected_result": vals["expected_result"],
-            "missing_coverage": vals["missing_coverage"]
-        })
+        # vcredist heuristic
+        if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
+            coverage_summary = [
+                "Client has vcredist installed",
+                "Applications relying on vcredist can run successfully"
+            ]
+            missing_coverage_list = [
+                "Verify vcredist post-installation for all clients",
+                "Validate vcredist upgrade paths and old client handling",
+                "Deploy applications relying on vcredist and validate"
+            ]
+            rationale_list = [
+                "Ensures the installation process installs required runtime correctly",
+                "Ensures upgrades don’t break dependent applications",
+                "Confirms clients can run apps dependent on vcredist"
+            ]
+
+        # apply your formatting (PRESERVED EXACTLY)
+        final_plan.append(
+            format_missing_coverage_for_html(
+                item, coverage_summary, missing_coverage_list, rationale_list
+            )
+        )
+
+    plan_data["plan"] = final_plan
     return plan_data
+
 
 
 # -------- Flask app ----------

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 from flask import Flask, request, render_template_string, session
@@ -87,6 +88,49 @@ def add_knowledge(text):
     items.append(text)
     save_knowledge(items)
 
+# ---------------- Helper: extract JSON from mixed text ----------------
+def extract_json(text: str) -> str:
+    """
+    Try to extract JSON from a string that may contain:
+    - fenced code blocks (```json ... ```)
+    - backtick code blocks (`{ ... }`)
+    - extra assistant commentary plus embedded JSON
+    Returns the JSON string if found, otherwise returns the original text.
+    """
+    if not isinstance(text, str):
+        return text
+
+    t = text.strip()
+
+    # If it's a fenced block starting with ```json or ```:
+    if t.startswith("```"):
+        # remove leading and trailing backticks
+        t_inner = t.strip("`").lstrip()
+        # if it starts with 'json', remove that prefix
+        if t_inner.lower().startswith("json"):
+            t_inner = t_inner[4:].lstrip()
+        # return inner content
+        return t_inner.strip()
+
+    # If wrapped in single backticks
+    if t.startswith("`") and t.endswith("`"):
+        inner = t.strip("`").strip()
+        return inner
+
+    # Try to locate the first JSON object {...} or array [...]
+    # Find a balanced {...} by searching for the first { and matching closing }
+    # Simple heuristic: use regex for object or array
+    obj_match = re.search(r"(\{(?:.|\n)*\})", t)
+    if obj_match:
+        return obj_match.group(1)
+
+    arr_match = re.search(r"(\[(?:.|\n)*\])", t)
+    if arr_match:
+        return arr_match.group(1)
+
+    # nothing found — return original so json.loads will fail and then fallback
+    return t
+
 # ---------------- Flask app ----------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or str(uuid4())
@@ -149,17 +193,6 @@ agent = Agent(
 
     "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
     ),
-
-    #system_prompt=(
-        #"You are the 'Test Coverage Optimizer'. "
-        #"Your ONLY job is to: "
-        #"- take any input (user stories, requirements, logs, or questions) "
-        #"- extract implied features, risks, and coverage gaps "
-        #"- generate detailed test plans with fields: risk (1–5), functional_area, test_case_steps, expected_result, missing_coverage, rationale "
-        #"- ALWAYS output valid JSON ONLY with structure: "
-        #"{ 'plan': [ { 'risk': 5, 'functional_area': '...', 'test_case_steps': ['step1'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] } "
-        #"NEVER give general explanations or text outside JSON."
-    #),
     tools={"http_get": http_get, "echo": echo}
 )
 
@@ -233,8 +266,9 @@ def chat():
 
         # try to render JSON → table
         try:
-            clean = extract_json(reply)
-            data = json.loads(clean)
+            # Attempt to extract JSON from reply in case the model wrapped it with markdown
+            cleaned = extract_json(reply)
+            data = json.loads(cleaned)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:
@@ -260,6 +294,7 @@ def chat():
             else:
                 chat_history.append({"role": "assistant", "content": reply})
         except Exception:
+            # if parsing failed, keep raw reply in history (so user sees the assistant message)
             chat_history.append({"role": "assistant", "content": reply})
 
         # persist chat history on disk

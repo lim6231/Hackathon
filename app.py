@@ -188,7 +188,7 @@ agent = Agent(
     "- Generate JSON ONLY using structure:\n"
     "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
     "- If you are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
-    "- Missing coverage should ONLY be filled when the user provides an existing test plan to audit.\n"
+    "- Missing coverage SHOULD be filled whenever the assistant identifies gaps based on its domain knowledge OR when auditing an existing plan.\n"
     "- Stay concise.\n"
 
     "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
@@ -272,7 +272,8 @@ def chat():
             plan = data.get("plan", [])
             rows = ""
             for p in plan:
-                steps = "<br>".join(p.get("test_case_steps", []))
+                steps_list = p.get("test_case_steps", [])
+                steps = "<br>".join([f"{i+1}. {s}" for i, s in enumerate(steps_list)])
                 rows += (
                     "<tr>"
                     f"<td>{p.get('risk', '')}</td>"

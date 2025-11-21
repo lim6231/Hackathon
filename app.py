@@ -115,17 +115,23 @@ def extract_json(text: str) -> str:
     return t
 
 # ---------------- Helper: expand vcredist steps ----------------
-def expand_vcredist_functionality_steps(plan_data):
+def expand_vcredist_steps(plan_data):
     for item in plan_data.get("plan", []):
-        if "functionality" in item.get("functional_area", "").lower():
-            # Append concrete SCCM actions
+        fa = item.get("functional_area", "").lower()
+        # Trigger on any area related to vcredist
+        if "vcredist" in fa or "functionality" in fa or "compatibility" in fa:
+            # Append concrete SCCM validation steps
             item["test_case_steps"].extend([
                 "Deploy an application that depends on vcredist",
                 "Run scheduled scripts that rely on vcredist",
-                "Run CMPivot queries to validate client state"
+                "Run CMPivot queries to validate client state",
+                "Verify installed programs list for expected vcredist version >= 14.42.34433",
+                "Check ccmsetup.log for installation/upgrade messages"
             ])
+            # Add missing coverage description
             item["missing_coverage"] = "Functional validation of apps, scripts, and CMPivot queries depending on vcredist"
     return plan_data
+
 
 # ---------------- Flask app ----------------
 app = Flask(__name__)
@@ -268,7 +274,7 @@ def chat():
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
-            data = expand_vcredist_functionality_steps(data)
+            data = expand_vcredist_steps(data)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:

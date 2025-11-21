@@ -66,6 +66,7 @@ class Agent:
         self.save_memory()
         return reply
 
+
 # --------- Knowledge store helpers ----------
 KNOWLEDGE_FILE = "knowledge_base.json"
 
@@ -88,7 +89,8 @@ def add_knowledge(text):
     items.append(text)
     save_knowledge(items)
 
-# ---------------- Helper: extract JSON from mixed text ----------------
+
+# ---------------- extract JSON ----------------
 def extract_json(text: str) -> str:
     if not isinstance(text, str):
         return text
@@ -114,12 +116,9 @@ def extract_json(text: str) -> str:
 
     return t
 
-# ---------------- Helper: expand vcredist functionality in test plan ----------------
+
+# ---------------- expand vcredist functionality ----------------
 def expand_vcredist_functionality_steps(plan_data):
-    """
-    Automatically detect vcredist-related items and inject the expected
-    missing coverage steps (deploy app, run scheduled script, CMPivot).
-    """
     TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
 
     for item in plan_data.get("plan", []):
@@ -132,7 +131,6 @@ def expand_vcredist_functionality_steps(plan_data):
         if any(k in text_blob for k in TARGET_KEYWORDS):
             steps = item.setdefault("test_case_steps", [])
 
-            # Only add if NOT already present (avoid duplication)
             def add_unique(step):
                 if step not in steps:
                     steps.append(step)
@@ -165,6 +163,7 @@ Session(app)
 UPLOAD_FOLDER = "./uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
 HTML_PAGE = """
 <!doctype html>
 <html>
@@ -194,6 +193,7 @@ HTML_PAGE = """
 </html>
 """
 
+
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
@@ -212,6 +212,7 @@ agent = Agent(
     ),
     tools={"http_get": http_get, "echo": echo}
 )
+
 
 @app.route("/", methods=["GET", "POST"])
 def chat():
@@ -248,13 +249,12 @@ def chat():
             except Exception as e:
                 transient_sources.append(f"[URL CONTENT FROM {url_input} ERROR: {e}]")
 
-        # Uploaded file handling
+        # Uploaded file
         if uploaded_file:
             filename = uploaded_file.filename
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(file_path)
 
-            # Always extract text and pass content to agent
             file_text = ""
             try:
                 if filename.lower().endswith(".docx"):
@@ -277,13 +277,11 @@ def chat():
             except Exception as e:
                 file_text = f"[UNREADABLE FILE: {e}]"
 
-    # Provide file content to LLM EVERY TIME
-    transient_sources.append(f"[FILE CONTENT: {filename}]\n{file_text}")
-
-    # Only save to knowledge if checkbox enabled
-    if save_k:
-        add_knowledge(f"[FILE {filename}]\n{file_text}")
-
+            # === FIX APPLIED HERE (ONLY CHANGE) ===
+            transient_sources.append(f"[FILE CONTENT: {filename}]\n{file_text}")
+            if save_k:
+                add_knowledge(f"[FILE {filename}]\n{file_text}")
+            # ======================================
 
         sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
 
@@ -301,11 +299,9 @@ def chat():
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
 
-        # Try rendering JSON → table
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
-            # Inject detailed vcredist steps for functionality items
             data = expand_vcredist_functionality_steps(data)
             plan = data.get("plan", [])
             rows = ""
@@ -339,6 +335,7 @@ def chat():
             json.dump(chat_history, f, ensure_ascii=False, indent=2)
 
     return render_template_string(HTML_PAGE, history=chat_history, table=table_html)
+
 
 if __name__ == "__main__":
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)

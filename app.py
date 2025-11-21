@@ -117,42 +117,54 @@ def extract_json(text: str) -> str:
     return t
 
 
-def expand_vcredist_functionality_steps(plan_data):
-    TARGET_KEYWORDS = ["vcredist", "visual c++", "vc++", "runtime"]
+# ---------------- expand vcredist functionality ----------------
+def format_missing_coverage(item, coverage_summary, missing_coverage_list, rationale_list):
+    # Join each section with newlines for clarity
+    missing_text = (
+        "With this test case:\n" +
+        "\n".join([f"- {c}" for c in coverage_summary]) + "\n\n" +
+        "Missing coverage / what to be added:\n" +
+        "\n".join([f"- {m}" for m in missing_coverage_list]) + "\n\n" +
+        "Rationale of adding / what can be achieved after adding:\n" +
+        "\n".join([f"- {r}" for r in rationale_list])
+    )
+    # Wrap in <pre> so HTML preserves line breaks
+    item["missing_coverage"] = f"<pre>{missing_text}</pre>"
+    return item
 
+
+def expand_test_case_missing_coverage(plan_data):
+    """
+    For any plan_data, generate structured missing coverage + rationale with proper line breaks.
+    """
     for item in plan_data.get("plan", []):
-        text_blob = (
-            " ".join(item.get("test_case_steps", [])) + " " +
-            item.get("expected_result", "")
-        ).lower()
+        steps_text = " ".join(item.get("test_case_steps", [])).lower()
+        coverage_summary = ["Test steps executed successfully"]  # default placeholder
 
-        if any(k in text_blob for k in TARGET_KEYWORDS):
-            # Dynamically determine missing coverage and rationale
-            missing_coverage_list = []
-            rationale_list = []
+        missing_coverage_list = []
+        rationale_list = []
 
-            steps = item.get("test_case_steps", [])
+        # Example heuristics based on step contents
+        if "vcredist" in steps_text:
+            coverage_summary = [
+                "Client has vcredist installed",
+                "Applications relying on vcredist can run successfully"
+            ]
+            missing_coverage_list = [
+                "Verify vcredist post-installation for all clients",
+                "Validate vcredist upgrade paths and old client handling",
+                "Deploy applications relying on vcredist and validate"
+            ]
+            rationale_list = [
+                "Ensures the installation process installs required runtime correctly",
+                "Ensures upgrades don’t break dependent applications",
+                "Confirms clients can run apps dependent on vcredist"
+            ]
+        else:
+            missing_coverage_list = ["None identified"]
+            rationale_list = ["This test plan covers the essential functionalities."]
 
-            # Simple logic to adjust missing coverage and rationale
-            if any("install" in s.lower() for s in steps):
-                missing_coverage_list.append("Verify vcredist post-installation for all clients")
-                rationale_list.append("Ensures the installation process installs required runtime correctly")
-
-            if any("upgrade" in s.lower() for s in steps):
-                missing_coverage_list.append("Validate vcredist upgrade paths and old client handling")
-                rationale_list.append("Ensures upgrades don’t break dependent applications")
-
-            if any("application" in s.lower() for s in steps):
-                missing_coverage_list.append("Deploy applications relying on vcredist and validate")
-                rationale_list.append("Confirms clients can run apps dependent on vcredist")
-
-            coverage_summary = "- Client has vcredist installed\n- Applications relying on vcredist can run successfully"
-
-            item["missing_coverage"] = (
-                f"With this test case:\n{coverage_summary}\n\n"
-                f"Missing coverage / what to be added:\n- " + "\n- ".join(missing_coverage_list) + "\n\n"
-                f"Rationale of adding / what can be achieved after adding:\n- " + "\n- ".join(rationale_list)
-            )
+        format_missing_coverage(item, coverage_summary, missing_coverage_list, rationale_list)
 
     return plan_data
 

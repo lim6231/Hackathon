@@ -247,7 +247,7 @@ def chat():
 
         sccm_reference = (
             "You need to generate a complete and detailed test plan.\n"
-            "Reference: https://learn.microsoft.com/en-us/intune/configmgr"
+            "Reference: https://learn.microsoft.com/en-us"
         )
 
         combined_parts = []

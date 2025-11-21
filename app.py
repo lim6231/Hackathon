@@ -110,8 +110,8 @@ def extract_json(text: str) -> str:
     return t
 
 
-# -------- Test plan enrichment & merge per functional area ----------
 # -------- Test plan enrichment ----------
+
 def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
     missing_coverage_text = (
         "With this test case:\n" +
@@ -122,36 +122,47 @@ def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_li
         "\n".join([f"- {r}" for r in rationale_list])
     )
     item["missing_coverage"] = f"<pre>{missing_coverage_text}</pre>"
-    item["rationale"] = f"<pre>\n" + "\n".join([f"- {r}" for r in rationale_list]) + "</pre>"
+    item["rationale"] = (
+        "<pre>\n" +
+        "\n".join([f"- {r}" for r in rationale_list]) +
+        "</pre>"
+    )
     return item
 
 
+# -------- NEW: fallback wrapper (minimal patch) ----------
+def enforce_formatting_fallback(item):
+    # If already formatted correctly, do nothing
+    if isinstance(item.get("missing_coverage"), str) and "<pre>" in item["missing_coverage"]:
+        return item
+
+    raw_missing = (item.get("missing_coverage") or "").strip()
+    raw_rationale = (item.get("rationale") or "").strip()
+
+    fallback_text = (
+        "With this test case:\n"
+        "- (Original missing_coverage was returned in plain text)\n\n"
+        "Missing coverage / what to be added:\n"
+        f"- {raw_missing or 'None'}\n\n"
+        "Rationale of adding / what can be achieved after adding:\n"
+        f"- {raw_rationale or 'Not provided'}"
+    )
+
+    item["missing_coverage"] = f"<pre>{fallback_text}</pre>"
+    item["rationale"] = f"<pre>- {raw_rationale or 'Not provided'}</pre>"
+    return item
+
+
+# -------- Core enrichment logic ----------
 def enrich_test_plan(plan_data):
-    merged = {}
-
-    # --- merge test steps by functional area ---
-    for item in plan_data.get("plan", []):
-        fa = item.get("functional_area", "")
-        if fa not in merged:
-            merged[fa] = {
-                "risk": item.get("risk", ""),
-                "functional_area": fa,
-                "test_case_steps": [],
-                "expected_result": item.get("expected_result", "")
-            }
-        merged[fa]["test_case_steps"].extend(item.get("test_case_steps", []))
-
-    # --- analyze each merged functional area once ---
-    final_plan = []
-    for fa, item in merged.items():
+    for idx, item in enumerate(plan_data.get("plan", [])):
         steps_text = " ".join(item.get("test_case_steps", [])).lower()
 
-        # defaults
         coverage_summary = ["Test steps executed successfully"]
         missing_coverage_list = ["None identified"]
         rationale_list = ["This test plan covers the essential functionalities."]
 
-        # vcredist heuristic
+        # Vcredist classification
         if any(k in steps_text for k in ["vcredist", "visual c++", "vc++", "runtime"]):
             coverage_summary = [
                 "Client has vcredist installed",
@@ -168,15 +179,16 @@ def enrich_test_plan(plan_data):
                 "Confirms clients can run apps dependent on vcredist"
             ]
 
-        # apply your formatting (PRESERVED EXACTLY)
-        final_plan.append(
-            format_missing_coverage_for_html(
-                item, coverage_summary, missing_coverage_list, rationale_list
-            )
+        # FIRST pass: apply your main formatting
+        formatted = format_missing_coverage_for_html(
+            item, coverage_summary, missing_coverage_list, rationale_list
         )
 
-    plan_data["plan"] = final_plan
+        # SECOND pass (only activates if LLM gave broken output)
+        plan_data["plan"][idx] = enforce_formatting_fallback(formatted)
+
     return plan_data
+
 
 
 

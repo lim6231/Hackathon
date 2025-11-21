@@ -18,7 +18,7 @@ def http_get(url: str) -> str:
 def echo(text: str) -> str:
     return f"ECHO_RESULT: {text}"
 
-class Agent:
+class Agent: 
     def __init__(self, name: str, system_prompt: str, tools=None, model="gpt-4o-mini", memory_file=None):
         self.name = name
         self.system_prompt = system_prompt
@@ -104,9 +104,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 HTML_PAGE = """
 <!doctype html>
 <html>
-<head><title>AI Test Coverage Optimizer</title></head>
+<head><title>Hackathon</title></head>
 <body>
-<h2>AI Test Coverage Optimizer</h2>
+<h2>Hackathon</h2>
 
 <form method="post" enctype="multipart/form-data">
 <textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
@@ -133,15 +133,32 @@ HTML_PAGE = """
 agent = Agent(
     name="test_optimizer",
     system_prompt=(
-        "You are the 'Test Coverage Optimizer'. "
-        "Your ONLY job is to: "
-        "- take any input (user stories, requirements, logs, or questions) "
-        "- extract implied features, risks, and coverage gaps "
-        "- generate detailed test plans with fields: risk (1–5), functional_area, test_case_steps, expected_result, missing_coverage, rationale "
-        "- ALWAYS output valid JSON ONLY with structure: "
-        "{ 'plan': [ { 'risk': 5, 'functional_area': '...', 'test_case_steps': ['step1'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] } "
-        "NEVER give general explanations or text outside JSON."
+    "You are an expert QA assistant. Behave like a normal chatbot by default."
+
+    "You have TWO MODES:\n"
+    "1) **Chat Mode** – If the user asks a question, talk normally and DO NOT generate JSON.\n"
+    "2) **Test-Plan Mode** – Only activate when the user explicitly asks for a test plan "
+    "or when they upload/give requirements/stories.\n\n"
+
+    "When in Test-Plan Mode:\n"
+    "- Generate JSON ONLY using structure:\n"
+    "{ 'plan': [ { 'risk': 1-5, 'functional_area': '...', 'test_case_steps': ['...'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] }\n"
+    "- If *you* are generating the test plan from user requirements, DO NOT invent missing coverage.\n"
+    "- Missing coverage should ONLY be filled when the user provides an existing test plan to audit.\n"
+    "- Stay concise.\n"
+
+    "Never enter Test-Plan Mode unless the user clearly requests it or provides user stories/files."
     ),
+    #system_prompt=(
+        #"You are the 'Test Coverage Optimizer'. "
+        #"Your ONLY job is to: "
+        #"- take any input (user stories, requirements, logs, or questions) "
+        #"- extract implied features, risks, and coverage gaps "
+        #"- generate detailed test plans with fields: risk (1–5), functional_area, test_case_steps, expected_result, missing_coverage, rationale "
+        #"- ALWAYS output valid JSON ONLY with structure: "
+        #"{ 'plan': [ { 'risk': 5, 'functional_area': '...', 'test_case_steps': ['step1'], 'expected_result': '...', 'missing_coverage': '...', 'rationale': '...' } ] } "
+        #"NEVER give general explanations or text outside JSON."
+    #),
     tools={"http_get": http_get, "echo": echo}
 )
 
@@ -195,7 +212,7 @@ def chat():
                     add_knowledge(f"[FILE {filename}]\n[UNREADABLE]")
 
         sccm_reference = (
-            "You need to generate a test plan for SCCM CMG deployment.\n"
+            "You need to generate a test plan.\n"
             "Reference: https://learn.microsoft.com/en-us/intune/configmgr"
         )
 

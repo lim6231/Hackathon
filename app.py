@@ -322,7 +322,7 @@ def chat():
         try:
             cleaned = extract_json(reply)
             data = json.loads(cleaned)
-            data = enrich_test_plan_optimized(data)
+            data = enrich_test_plan(data)
             plan = data.get("plan", [])
             rows = ""
             for p in plan:

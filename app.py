@@ -266,6 +266,14 @@ def chat():
             combined = "Please generate a detailed SCCM SUM test plan in JSON format with numbered test steps:\n\n" + combined
 
         reply = agent.handle(combined, session_memory=session["session_memory"])
+        
+        # After getting `reply` from agent.handle()
+        if "Chat Mode" in reply:  # or some heuristic to detect normal chat text
+            # Split by common numbered formats like "1. "
+            items = re.split(r"\s*\d+\.\s+", reply)
+            if len(items) > 1:
+                formatted = "<ol>" + "".join(f"<li>{i.strip()}</li>" for i in items[1:] if i.strip()) + "</ol>"
+                reply = formatted
 
         # try to render JSON → table
         try:

@@ -224,7 +224,7 @@ HTML_PAGE = """
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     h2 img {
-        height: 40px;
+        height: 5000px;
         vertical-align: middle;
         margin-right: 10px;
     }
@@ -263,7 +263,7 @@ HTML_PAGE = """
 <div class="container">
 
 <h2>
-    <img src="/static/agent_icon.png">
+    <img src="/icon/agent_icon.png">
     Hackathon
 </h2>
 

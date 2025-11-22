@@ -224,10 +224,13 @@ HTML_PAGE = """
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     h2 img {
-        height: 40px;
-        vertical-align: middle;
-        margin-right: 10px;
+    height: auto;        /* let it scale based on width */
+    width: 100%;         /* span the entire h2 width */
+    max-height: 200px;   /* optional: prevent it from getting too tall */
+    display: block;
+    margin: 0 auto 10px; /* center it and keep some bottom margin */
     }
+
     textarea {
         width: 100%;
         font-size: 14px;
@@ -380,10 +383,23 @@ def chat():
 
         chat_history.append({"role": "You", "content": user_input})
 
-        if any(keyword in user_input.lower() for keyword in ["sccm", "test plan"]):
-            combined = "Please generate a detailed test plan in JSON format with complete test steps after understanding user requirement and from uploaded documents:\n\n" + combined
+        trigger_test_plan = any(keyword in user_input.lower() for keyword in ["sccm", "test plan"])
 
-        reply = agent.handle(combined, session_memory=session["session_memory"])
+        if trigger_test_plan:
+            combined = "Please generate a detailed test plan in JSON format with complete test steps after understanding user requirement and from uploaded documents:\n\n" + combined
+            reply = agent.handle(combined, session_memory=session["session_memory"])
+            try:
+                cleaned = extract_json(reply)
+                data = json.loads(cleaned)
+                data = enrich_test_plan(data)
+                plan = data.get("plan", [])
+                # build table_html as before...
+            except Exception:
+                table_html = None
+        else:
+            reply = agent.handle(user_input, session_memory=session["session_memory"])
+            table_html = None
+
 
         try:
             cleaned = extract_json(reply)

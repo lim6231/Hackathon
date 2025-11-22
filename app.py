@@ -370,7 +370,7 @@ def chat():
             if save_k:
                 add_knowledge(f"[FILE {filename}]\n{file_text}")
 
-        sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
+        sccm_reference = "General SCCM reference.\nReference: https://learn.microsoft.com/en-us"
         combined_parts = [p for p in [knowledge_block] if p]
         if transient_sources:
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))

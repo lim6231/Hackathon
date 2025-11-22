@@ -207,7 +207,7 @@ HTML_PAGE = """
 <!doctype html>
 <html>
 <head>
-<title>Hackathon</title>
+<title>Akili Prime</title>
 <style>
     body { 
         font-family: Arial, sans-serif; 
@@ -264,7 +264,6 @@ HTML_PAGE = """
 
 <h2>
     <img src="/static/agent_icon.png">
-    Hackathon
 </h2>
 
 <form method="post" enctype="multipart/form-data">

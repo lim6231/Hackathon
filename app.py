@@ -206,28 +206,95 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 HTML_PAGE = """
 <!doctype html>
 <html>
-<head><title>Hackathon</title></head>
+<head>
+<title>Hackathon</title>
+<style>
+    body { 
+        font-family: Arial, sans-serif; 
+        background: #f5f5f5; 
+        margin: 0; 
+        padding: 20px;
+    }
+    .container {
+        max-width: 1100px;
+        margin: auto;
+        background: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h2 img {
+        height: 40px;
+        vertical-align: middle;
+        margin-right: 10px;
+    }
+    textarea {
+        width: 100%;
+        font-size: 14px;
+        padding: 10px;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        background: #fff;
+    }
+    th, td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        vertical-align: top;
+    }
+    th { background: #eee; }
+    .history-box {
+        max-height: 300px;
+        overflow-y: auto;
+        background: #fafafa;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        margin-top: 20px;
+    }
+    .msg-user { color: #1565c0; font-weight: bold; }
+    .msg-assistant { color: #2e7d32; font-weight: bold; }
+</style>
+</head>
+
 <body>
-<h2>Hackathon</h2>
+<div class="container">
+
+<h2>
+    <img src="/static/agent_icon.png">
+    Hackathon
+</h2>
+
 <form method="post" enctype="multipart/form-data">
-<textarea name="user_input" rows="5" cols="80" placeholder="Enter multiple user stories separated by line breaks"></textarea><br>
-<input type="file" name="file"><br>
-<input type="text" name="url" placeholder="Enter URL (OneNote, docs, etc.)"><br>
-<label><input type="checkbox" name="save_knowledge"> Save uploaded/URL content to knowledge base</label><br>
-<input type="submit" value="Send"/>
+    <textarea name="user_input" rows="5" placeholder="Enter your request..."></textarea><br><br>
+    <input type="file" name="file"><br><br>
+    <input type="submit" value="Send"/>
 </form>
-<div style="margin-top:20px;">
+
 {% if table %}
 <h3>Prioritized Test Plan</h3>
 {{ table|safe }}
 {% endif %}
+
+<h3>Conversation History</h3>
+<div class="history-box">
 {% for entry in history %}
-<p><b>{{ entry.role }}:</b> {{ entry.content|safe }}</p>
+    <p>
+        <span class="msg-{{ 'user' if entry.role=='You' else 'assistant' }}">
+            {{ entry.role }}:
+        </span>
+        {{ entry.content|safe }}
+    </p>
 {% endfor %}
+</div>
+
 </div>
 </body>
 </html>
 """
+
 
 agent = Agent(
     name="test_optimizer",

@@ -224,13 +224,10 @@ HTML_PAGE = """
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     h2 img {
-    height: auto;        /* let it scale based on width */
-    width: 100%;         /* span the entire h2 width */
-    max-height: 200px;   /* optional: prevent it from getting too tall */
-    display: block;
-    margin: 0 auto 10px; /* center it and keep some bottom margin */
+        height: 120px;
+        vertical-align: middle;
+        margin-right: 10px;
     }
-
     textarea {
         width: 100%;
         font-size: 14px;
@@ -267,6 +264,7 @@ HTML_PAGE = """
 
 <h2>
     <img src="/static/agent_icon.png">
+    Akili Prime
 </h2>
 
 <form method="post" enctype="multipart/form-data">
@@ -373,7 +371,7 @@ def chat():
             if save_k:
                 add_knowledge(f"[FILE {filename}]\n{file_text}")
 
-        sccm_reference = "General SCCM reference.\nReference: https://learn.microsoft.com/en-us"
+        sccm_reference = "You need to generate a complete and detailed test plan.\nReference: https://learn.microsoft.com/en-us"
         combined_parts = [p for p in [knowledge_block] if p]
         if transient_sources:
             combined_parts.append("\n\n--- SUBMISSION SOURCES ---\n" + "\n\n".join(transient_sources))
@@ -383,23 +381,10 @@ def chat():
 
         chat_history.append({"role": "You", "content": user_input})
 
-        trigger_test_plan = any(keyword in user_input.lower() for keyword in ["sccm", "test plan"])
-
-        if trigger_test_plan:
+        if any(keyword in user_input.lower() for keyword in ["sccm", "test plan"]):
             combined = "Please generate a detailed test plan in JSON format with complete test steps after understanding user requirement and from uploaded documents:\n\n" + combined
-            reply = agent.handle(combined, session_memory=session["session_memory"])
-            try:
-                cleaned = extract_json(reply)
-                data = json.loads(cleaned)
-                data = enrich_test_plan(data)
-                plan = data.get("plan", [])
-                # build table_html as before...
-            except Exception:
-                table_html = None
-        else:
-            reply = agent.handle(user_input, session_memory=session["session_memory"])
-            table_html = None
 
+        reply = agent.handle(combined, session_memory=session["session_memory"])
 
         try:
             cleaned = extract_json(reply)

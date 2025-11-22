@@ -110,7 +110,7 @@ def extract_json(text: str) -> str:
     return t
 
 
-# -------- Test plan enrichment ----------
+# -------- Test plan enrichment ------------
 
 def format_missing_coverage_for_html(item, coverage_summary, missing_coverage_list, rationale_list):
     missing_coverage_text = (
@@ -224,7 +224,7 @@ HTML_PAGE = """
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     h2 img {
-        height: 5000px;
+        height: 40px;
         vertical-align: middle;
         margin-right: 10px;
     }
@@ -263,7 +263,7 @@ HTML_PAGE = """
 <div class="container">
 
 <h2>
-    <img src="/icon/agent_icon.png">
+    <img src="/static/agent_icon.png">
     Hackathon
 </h2>
 
